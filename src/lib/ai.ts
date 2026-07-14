@@ -297,6 +297,20 @@ export async function analyzeExampleLayout(
     if (!input?.pages || input.pages.length === 0) {
       return { ok: false, message: "Die KI konnte keine Struktur ableiten." };
     }
+
+    // Manche Modelle liefern Prozent- (0..100) oder Pixelwerte statt 0..1.
+    // Skalierungsfaktor aus dem groessten vorkommenden Wert ableiten.
+    let maxCoord = 0;
+    for (const pg of input.pages)
+      for (const b of pg.blocks ?? [])
+        for (const v of [b.x, b.y, b.w, b.h]) {
+          const n = Number(v);
+          if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
+        }
+    const scale =
+      maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
+    const s = (v: unknown) => Number(v) * scale;
+
     // Normalisieren / begrenzen.
     const pages: LayoutPage[] = input.pages.slice(0, 12).map((pg) => ({
       title: String(pg.title ?? "Seite").slice(0, 60),
@@ -305,10 +319,10 @@ export async function analyzeExampleLayout(
         .slice(0, 24)
         .map((b) => ({
           type: b.type,
-          x: clamp01(b.x),
-          y: clamp01(b.y),
-          w: clamp01(b.w, 0.02),
-          h: clamp01(b.h, 0.01),
+          x: clamp01(s(b.x)),
+          y: clamp01(s(b.y)),
+          w: clamp01(s(b.w), 0.02),
+          h: clamp01(s(b.h), 0.01),
           text: b.text ? String(b.text).slice(0, 200) : undefined,
           align: b.align,
         })),

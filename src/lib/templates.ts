@@ -243,7 +243,13 @@ export function createProject(
     title: `${title} – Exposé`,
     pages,
     updatedAt: Date.now(),
+    builtFrom: "default",
   };
+}
+
+// Eindeutiger Stempel einer gelernten Struktur (zum Abgleich mit dem Projekt).
+export function layoutStamp(layout: StoredLayout): string {
+  return `layout:${layout.createdAt}`;
 }
 
 // --- Projekt aus der KI-gelernten Struktur (Beispiel-Exposé) -------------
@@ -372,5 +378,6 @@ export function createProjectFromLayout(
     title: `${TITLE[type]} – Exposé`,
     pages: pages.length > 0 ? pages : createProject(type, logo).pages,
     updatedAt: Date.now(),
+    builtFrom: layoutStamp(layout),
   };
 }

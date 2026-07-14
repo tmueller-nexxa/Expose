@@ -9,7 +9,11 @@ import {
   type PageElement,
   type TextElement,
 } from "../lib/types";
-import { createProject, createProjectFromLayout } from "../lib/templates";
+import {
+  createProject,
+  createProjectFromLayout,
+  layoutStamp,
+} from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
@@ -24,6 +28,13 @@ import {
   IconTrash,
 } from "../components/Icons";
 import "./EditorPage.css";
+
+// Hat der Nutzer bereits eigene Bilder auf den Seiten platziert?
+function hasPlacedImages(project: ExposeProject): boolean {
+  return project.pages.some((pg) =>
+    pg.elements.some((e) => e.kind === "image" && (e as ImageElement).src),
+  );
+}
 
 export function EditorPage() {
   const { type } = useParams<{ type: string }>();
@@ -43,6 +54,8 @@ export function EditorPage() {
   );
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(560);
+  // Es liegt eine neuere Beispiel-Struktur vor als das offene Projekt.
+  const [structureUpdate, setStructureUpdate] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   // Projekt laden oder aus Vorlage erstellen.
@@ -51,15 +64,31 @@ export function EditorPage() {
     (async () => {
       const existing = await loadProject(exType);
       const layout = data.layouts[exType];
-      // Neues Projekt: gelernte Struktur nutzen, sonst Standardvorlage.
       const fresh = layout
         ? createProjectFromLayout(exType, layout, data.logo)
         : createProject(exType, data.logo);
-      const proj = existing ?? fresh;
+
+      let proj = existing ?? fresh;
+      let saveIt = !existing;
+      let updateHint = false;
+
+      // Neuere gelernte Struktur vorhanden als das gespeicherte Projekt?
+      if (existing && layout && existing.builtFrom !== layoutStamp(layout)) {
+        if (!hasPlacedImages(existing)) {
+          // Noch keine Bilder platziert -> neue Struktur direkt uebernehmen.
+          proj = createProjectFromLayout(exType, layout, data.logo);
+          saveIt = true;
+        } else {
+          // Es steckt schon Arbeit drin -> nur Hinweis anbieten.
+          updateHint = true;
+        }
+      }
+
       if (!alive) return;
       projectRef.current = proj;
       setProject(proj);
-      if (!existing) void saveProject(proj);
+      setStructureUpdate(updateHint);
+      if (saveIt) void saveProject(proj);
     })();
     return () => {
       alive = false;
@@ -323,6 +352,7 @@ export function EditorPage() {
     setPageIndex(0);
     setSelectedId(null);
     setEditingId(null);
+    setStructureUpdate(false);
     flash(
       layout
         ? "Aufbau aus den Beispielen übernommen."
@@ -399,6 +429,27 @@ export function EditorPage() {
           <IconSparkle size={18} /> Generieren
         </button>
       </header>
+
+      {structureUpdate && (
+        <div className="structure-banner">
+          <span>
+            <strong>Neue Struktur aus Ihrem Beispiel verfügbar.</strong> Ihr
+            aktuelles Exposé nutzt noch den alten Aufbau. Übernehmen? (Platzierte
+            Bilder gehen dabei verloren.)
+          </span>
+          <div className="row">
+            <button className="btn btn-primary" onClick={rebuildFromStructure}>
+              Neue Struktur übernehmen
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setStructureUpdate(false)}
+            >
+              Später
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="editor-body">
         <div className="canvas-viewport" ref={viewportRef}>

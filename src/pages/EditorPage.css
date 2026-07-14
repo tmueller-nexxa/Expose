@@ -55,6 +55,21 @@
   transition: width 0.3s ease;
 }
 
+/* Hinweis: neue Struktur verfuegbar */
+.structure-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: #eef4ff;
+  border-bottom: 1px solid #cfe0fb;
+  color: #1e3a5f;
+  font-size: 13.5px;
+  flex-shrink: 0;
+}
+
 /* Body */
 .editor-body {
   flex: 1;

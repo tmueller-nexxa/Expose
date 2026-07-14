@@ -169,4 +169,7 @@ export interface ExposeProject {
   title: string;
   pages: Page[];
   updatedAt: number;
+  // Herkunft des Aufbaus: "default" oder Zeitstempel der gelernten Struktur.
+  // So erkennt der Editor, ob eine neuere Beispiel-Struktur vorliegt.
+  builtFrom?: string;
 }
