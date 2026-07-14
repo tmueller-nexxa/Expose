@@ -111,30 +111,56 @@ function page(title: string, elements: (PageElement | null)[]): Page {
   };
 }
 
-export function createProject(
-  type: ExposeType,
+function titlePage(
   logo: StoredFile | null,
-): ExposeProject {
-  zCounter = 1;
-  const accent = ACCENT[type];
-  const title = TITLE[type];
+  accent: string,
+  title: string,
+): Page {
+  return page("Titelseite", [
+    logoSlot(logo),
+    imageSlot(0.06, 0.18, 0.88, 0.52),
+    accentBar(accent),
+    heading("EXPOSÉ", 0.06, 0.1, 0.6, { fontSize: 15, color: accent, weight: 600 }),
+    heading(title, 0.06, 0.74, 0.88, { fontSize: 40, weight: 800 }),
+    heading("Musterstraße 1 · 12345 Musterstadt", 0.06, 0.83, 0.88, {
+      fontSize: 18,
+      color: "#5b6b7b",
+      weight: 400,
+    }),
+  ]);
+}
 
-  const pages: Page[] = [
-    // 1 · Titelseite
-    page("Titelseite", [
-      logoSlot(logo),
-      imageSlot(0.06, 0.18, 0.88, 0.52),
-      accentBar(accent),
-      heading("EXPOSÉ", 0.06, 0.1, 0.6, { fontSize: 15, color: accent, weight: 600 }),
-      heading(title, 0.06, 0.74, 0.88, { fontSize: 40, weight: 800 }),
-      heading("Musterstraße 1 · 12345 Musterstadt", 0.06, 0.83, 0.88, {
-        fontSize: 18,
-        color: "#5b6b7b",
-        weight: 400,
-      }),
-    ]),
+function contactPage(logo: StoredFile | null, accent: string): Page {
+  return page("Kontakt", [
+    logoSlot(logo),
+    accentBar(accent),
+    heading("Ihr Ansprechpartner", 0.06, 0.09, 0.88, { fontSize: 26 }),
+    heading("Max Mustermann · Immobilienmakler", 0.06, 0.22, 0.88, {
+      fontSize: 20,
+      weight: 600,
+    }),
+    heading("Telefon: 0123 / 456 789", 0.06, 0.3, 0.88, {
+      fontSize: 16,
+      color: "#5b6b7b",
+      weight: 400,
+    }),
+    heading("E-Mail: kontakt@makler.de", 0.06, 0.35, 0.88, {
+      fontSize: 16,
+      color: "#5b6b7b",
+      weight: 400,
+    }),
+    imageSlot(0.06, 0.45, 0.42, 0.45),
+  ]);
+}
 
-    // 2 · Objektbeschreibung
+// Standard-Aufbau (Haus / Gewerbe): Titel, Objekt, Lage, Ausstattung, Kontakt.
+function defaultPages(
+  logo: StoredFile | null,
+  accent: string,
+  title: string,
+): Page[] {
+  return [
+    titlePage(logo, accent, title),
     page("Objektbeschreibung", [
       logoSlot(logo),
       accentBar(accent),
@@ -143,8 +169,6 @@ export function createProject(
       imageSlot(0.06, 0.66, 0.42, 0.26),
       imageSlot(0.52, 0.66, 0.42, 0.26),
     ]),
-
-    // 3 · Lage & Umgebung
     page("Lage & Umgebung", [
       logoSlot(logo),
       accentBar(accent),
@@ -153,8 +177,6 @@ export function createProject(
       imageSlot(0.64, 0.2, 0.3, 0.335),
       imageSlot(0.64, 0.565, 0.3, 0.325),
     ]),
-
-    // 4 · Ausstattung & Grundriss
     page("Ausstattung & Grundriss", [
       logoSlot(logo),
       accentBar(accent),
@@ -162,29 +184,58 @@ export function createProject(
       imageSlot(0.06, 0.2, 0.42, 0.7),
       imageSlot(0.52, 0.2, 0.42, 0.7),
     ]),
+    contactPage(logo, accent),
+  ];
+}
 
-    // 5 · Kontakt
-    page("Kontakt", [
+// Wohnungs-Aufbau (Etagenwohnung): Wohnraeume, Grundriss/Wohnflaeche, Anbindung.
+function wohnungPages(
+  logo: StoredFile | null,
+  accent: string,
+  title: string,
+): Page[] {
+  return [
+    titlePage(logo, accent, title),
+    page("Wohnräume", [
       logoSlot(logo),
       accentBar(accent),
-      heading("Ihr Ansprechpartner", 0.06, 0.09, 0.88, { fontSize: 26 }),
-      heading("Max Mustermann · Immobilienmakler", 0.06, 0.22, 0.88, {
-        fontSize: 20,
-        weight: 600,
-      }),
-      heading("Telefon: 0123 / 456 789", 0.06, 0.3, 0.88, {
-        fontSize: 16,
-        color: "#5b6b7b",
-        weight: 400,
-      }),
-      heading("E-Mail: kontakt@makler.de", 0.06, 0.35, 0.88, {
-        fontSize: 16,
-        color: "#5b6b7b",
-        weight: 400,
-      }),
-      imageSlot(0.06, 0.45, 0.42, 0.45),
+      heading("Wohnräume", 0.06, 0.09, 0.88, { fontSize: 26 }),
+      imageSlot(0.06, 0.2, 0.88, 0.4),
+      imageSlot(0.06, 0.64, 0.42, 0.28),
+      imageSlot(0.52, 0.64, 0.42, 0.28),
     ]),
+    page("Grundriss & Wohnfläche", [
+      logoSlot(logo),
+      accentBar(accent),
+      heading("Grundriss & Wohnfläche", 0.06, 0.09, 0.88, { fontSize: 26 }),
+      imageSlot(0.06, 0.2, 0.56, 0.7),
+      imageSlot(0.66, 0.2, 0.28, 0.335),
+      imageSlot(0.66, 0.565, 0.28, 0.325),
+    ]),
+    page("Lage & Anbindung", [
+      logoSlot(logo),
+      accentBar(accent),
+      heading("Lage & Anbindung", 0.06, 0.09, 0.88, { fontSize: 26 }),
+      imageSlot(0.06, 0.2, 0.88, 0.44),
+      imageSlot(0.06, 0.68, 0.42, 0.24),
+      imageSlot(0.52, 0.68, 0.42, 0.24),
+    ]),
+    contactPage(logo, accent),
   ];
+}
+
+export function createProject(
+  type: ExposeType,
+  logo: StoredFile | null,
+): ExposeProject {
+  zCounter = 1;
+  const accent = ACCENT[type];
+  const title = TITLE[type];
+
+  const pages =
+    type === "wohnung"
+      ? wohnungPages(logo, accent, title)
+      : defaultPages(logo, accent, title);
 
   return {
     id: uid("proj"),
