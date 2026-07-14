@@ -1,0 +1,118 @@
+.login-screen {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+}
+
+.login-hero {
+  position: relative;
+  background: linear-gradient(150deg, #0f2027, #203a43 55%, #2c5364);
+  color: #fff;
+  padding: 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.login-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(600px circle at 80% 10%, rgba(111, 66, 193, 0.35), transparent 60%),
+    radial-gradient(500px circle at 10% 90%, rgba(31, 111, 235, 0.35), transparent 55%);
+}
+.login-hero > * {
+  position: relative;
+  z-index: 1;
+}
+.login-hero .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 800;
+  font-size: 20px;
+}
+.login-hero .mark .box {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1f6feb, #6f42c1);
+  display: grid;
+  place-items: center;
+}
+.login-hero h1 {
+  color: #fff;
+  font-size: 40px;
+  line-height: 1.15;
+  max-width: 15ch;
+  margin-bottom: 18px;
+}
+.login-hero p {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 17px;
+  max-width: 42ch;
+}
+.login-hero .feats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-hero .feat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.login-hero .feat .dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  color: #7ee3a3;
+}
+
+.login-form-side {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+}
+.login-card h2 {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+.login-card .sub {
+  color: var(--text-muted);
+  margin-bottom: 28px;
+}
+.login-error {
+  background: #fef2f2;
+  color: var(--danger);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.login-demo-note {
+  margin-top: 22px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .login-screen {
+    grid-template-columns: 1fr;
+  }
+  .login-hero {
+    display: none;
+  }
+}
