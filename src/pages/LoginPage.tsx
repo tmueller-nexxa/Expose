@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { IconCheck } from "../components/Icons";
+import { SkylineBanner } from "../components/Illustrations";
 import "./LoginPage.css";
 
 export function LoginPage() {
@@ -30,6 +31,9 @@ export function LoginPage() {
   return (
     <div className="login-screen">
       <div className="login-hero">
+        <div className="hero-skyline">
+          <SkylineBanner />
+        </div>
         <div className="mark">
           <span className="box">E</span>
           Exposé&nbsp;KI

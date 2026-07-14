@@ -6,7 +6,7 @@
 
 .login-hero {
   position: relative;
-  background: linear-gradient(150deg, #0f2027, #203a43 55%, #2c5364);
+  background: linear-gradient(155deg, #0d1b2a, #16233a 45%, #223a5e);
   color: #fff;
   padding: 60px;
   display: flex;
@@ -14,15 +14,36 @@
   justify-content: space-between;
   overflow: hidden;
 }
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(160deg, #000 10%, transparent 70%);
+  -webkit-mask-image: linear-gradient(160deg, #000 10%, transparent 70%);
+}
 .login-hero::after {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(600px circle at 80% 10%, rgba(111, 66, 193, 0.35), transparent 60%),
-    radial-gradient(500px circle at 10% 90%, rgba(31, 111, 235, 0.35), transparent 55%);
+    radial-gradient(650px circle at 85% 5%, rgba(111, 66, 193, 0.4), transparent 60%),
+    radial-gradient(560px circle at 5% 60%, rgba(31, 111, 235, 0.38), transparent 55%);
 }
-.login-hero > * {
+.hero-skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 260px;
+  z-index: 0;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.login-hero > *:not(.hero-skyline) {
   position: relative;
   z-index: 1;
 }

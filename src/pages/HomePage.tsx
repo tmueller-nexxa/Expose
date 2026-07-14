@@ -9,13 +9,26 @@ import {
   IconHome,
   IconShop,
 } from "../components/Icons";
+import {
+  ApartmentScene,
+  CommercialScene,
+  HouseScene,
+  InteriorScene,
+} from "../components/Illustrations";
 import "./HomePage.css";
 
 const ICONS: Record<ExposeType, JSX.Element> = {
-  einfamilienhaus: <IconHome size={28} />,
-  wohnung: <IconApartment size={28} />,
-  mehrfamilienhaus: <IconBuilding size={28} />,
-  gewerbe: <IconShop size={28} />,
+  einfamilienhaus: <IconHome size={20} />,
+  wohnung: <IconApartment size={20} />,
+  mehrfamilienhaus: <IconBuilding size={20} />,
+  gewerbe: <IconShop size={20} />,
+};
+
+const SCENES: Record<ExposeType, JSX.Element> = {
+  einfamilienhaus: <HouseScene />,
+  wohnung: <InteriorScene />,
+  mehrfamilienhaus: <ApartmentScene />,
+  gewerbe: <CommercialScene />,
 };
 
 export function HomePage() {
@@ -69,10 +82,15 @@ export function HomePage() {
               className={`type-card ${t.id}`}
               onClick={() => navigate(`/editor/${t.id}`)}
             >
-              <div className="icon-wrap">{ICONS[t.id]}</div>
-              <h3>{t.label}</h3>
-              <div className="desc">{t.description}</div>
-              <span className="go">Exposé öffnen →</span>
+              <div className="card-scene">
+                {SCENES[t.id]}
+                <span className="scene-badge">{ICONS[t.id]}</span>
+              </div>
+              <div className="card-body">
+                <h3>{t.label}</h3>
+                <div className="desc">{t.description}</div>
+                <span className="go">Exposé öffnen →</span>
+              </div>
             </button>
           ))}
         </div>
