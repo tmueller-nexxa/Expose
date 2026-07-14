@@ -3,6 +3,7 @@ import { TopBar } from "../components/TopBar";
 import { useApp } from "../context/AppContext";
 import { EXPOSE_TYPES, type ExposeType } from "../lib/types";
 import {
+  IconApartment,
   IconBuilding,
   IconCheck,
   IconHome,
@@ -12,6 +13,7 @@ import "./HomePage.css";
 
 const ICONS: Record<ExposeType, JSX.Element> = {
   einfamilienhaus: <IconHome size={28} />,
+  wohnung: <IconApartment size={28} />,
   mehrfamilienhaus: <IconBuilding size={28} />,
   gewerbe: <IconShop size={28} />,
 };

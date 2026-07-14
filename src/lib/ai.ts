@@ -14,6 +14,7 @@ export const MODEL_OPTIONS = [
 
 const TYPE_LABEL: Record<ExposeType, string> = {
   einfamilienhaus: "Einfamilienhaus",
+  wohnung: "Eigentumswohnung",
   mehrfamilienhaus: "Mehrfamilienhaus / Kapitalanlage",
   gewerbe: "Gewerbeimmobilie",
 };

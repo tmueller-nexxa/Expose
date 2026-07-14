@@ -1,6 +1,10 @@
 // Zentrale Typdefinitionen der Anwendung.
 
-export type ExposeType = "einfamilienhaus" | "mehrfamilienhaus" | "gewerbe";
+export type ExposeType =
+  | "einfamilienhaus"
+  | "wohnung"
+  | "mehrfamilienhaus"
+  | "gewerbe";
 
 export const EXPOSE_TYPES: {
   id: ExposeType;
@@ -15,6 +19,13 @@ export const EXPOSE_TYPES: {
     short: "EFH",
     description: "Klassisches Wohnhaus fuer eine Familie",
     icon: "home",
+  },
+  {
+    id: "wohnung",
+    label: "Wohnung",
+    short: "WHG",
+    description: "Eigentums- oder Mietwohnung / Etagenwohnung",
+    icon: "apartment",
   },
   {
     id: "mehrfamilienhaus",

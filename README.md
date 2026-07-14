@@ -8,7 +8,7 @@ Bild zu verdecken. Alles bleibt frei per Maus anpassbar.
 ## Funktionen
 
 - **Login-Startseite** (Demo-Login: beliebige E-Mail + Passwort)
-- **Typ-Auswahl**: Einfamilienhaus · Mehrfamilienhaus · Gewerbeimmobilie
+- **Typ-Auswahl**: Einfamilienhaus · Wohnung · Mehrfamilienhaus · Gewerbeimmobilie
 - **Datenbereich** mit vier Uploads:
   1. **Beispiel-Exposés** (PDF/Bilder) je Typ – ihr Aufbau dient als Vorlage
   2. **Schreibstil-Texte** – die KI übernimmt Tonfall und Wortwahl

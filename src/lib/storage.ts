@@ -72,6 +72,7 @@ export function emptyAppData(): AppData {
   return {
     examples: {
       einfamilienhaus: [],
+      wohnung: [],
       mehrfamilienhaus: [],
       gewerbe: [],
     },

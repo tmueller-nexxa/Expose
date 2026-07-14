@@ -86,12 +86,14 @@ function logoSlot(logo: StoredFile | null): PageElement | null {
 
 const ACCENT: Record<ExposeType, string> = {
   einfamilienhaus: "#c8a04b",
+  wohnung: "#1f8f6f",
   mehrfamilienhaus: "#2f6f8f",
   gewerbe: "#7a4b8f",
 };
 
 const TITLE: Record<ExposeType, string> = {
   einfamilienhaus: "Einfamilienhaus",
+  wohnung: "Wohnung",
   mehrfamilienhaus: "Mehrfamilienhaus",
   gewerbe: "Gewerbeimmobilie",
 };

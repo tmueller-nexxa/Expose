@@ -29,6 +29,14 @@ export const IconBuilding = ({ size = 24, className }: P) => (
   </svg>
 );
 
+export const IconApartment = ({ size = 24, className }: P) => (
+  <svg {...base(size)} className={className}>
+    <rect x="4" y="3" width="16" height="18" rx="1.5" />
+    <path d="M8 7h2M14 7h2M8 11h2M14 11h2M8 15h2M14 15h2" />
+    <path d="M4 21h16" />
+  </svg>
+);
+
 export const IconShop = ({ size = 24, className }: P) => (
   <svg {...base(size)} className={className}>
     <path d="M4 9h16l-1-4H5L4 9Z" />
