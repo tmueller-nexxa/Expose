@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { IconCheck } from "../components/Icons";
@@ -11,9 +11,10 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  if (loggedIn) {
-    navigate("/", { replace: true });
-  }
+  // Bereits angemeldet? Dann direkt weiter (z.B. Reload auf /login).
+  useEffect(() => {
+    if (loggedIn) navigate("/", { replace: true });
+  }, [loggedIn, navigate]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();

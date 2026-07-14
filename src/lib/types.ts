@@ -67,12 +67,41 @@ export interface ApiSettings {
   model: string;
 }
 
+// --- Aus Beispiel-Exposés gelernte Seitenstruktur -----------------------
+
+export type LayoutBlockType = "image" | "heading" | "text" | "logo";
+
+export interface LayoutBlock {
+  type: LayoutBlockType;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text?: string; // generischer Platzhaltertext bei heading/text
+  align?: "left" | "center" | "right";
+}
+
+export interface LayoutPage {
+  title: string;
+  blocks: LayoutBlock[];
+}
+
+// Die von der KI aus den Beispielen abgeleitete Struktur eines Typs.
+export interface StoredLayout {
+  pages: LayoutPage[];
+  source: string; // Name der analysierten Beispieldatei
+  pageCount: number;
+  createdAt: number;
+}
+
 // Persistente Nutzerdaten (Uploads, Keys ...).
 export interface AppData {
   examples: Record<ExposeType, StoredFile[]>;
   styleTexts: StyleText[];
   logo: StoredFile | null;
   api: ApiSettings;
+  // Pro Typ: aus den Beispielen uebernommene Seitenstruktur (oder null).
+  layouts: Record<ExposeType, StoredLayout | null>;
 }
 
 // --- Editor / Dokument-Modell -------------------------------------------

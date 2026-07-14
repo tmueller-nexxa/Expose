@@ -83,6 +83,12 @@ export function emptyAppData(): AppData {
       apiKey: "",
       model: "claude-sonnet-5",
     },
+    layouts: {
+      einfamilienhaus: null,
+      wohnung: null,
+      mehrfamilienhaus: null,
+      gewerbe: null,
+    },
   };
 }
 
@@ -96,6 +102,7 @@ export async function loadAppData(): Promise<AppData> {
     ...stored,
     examples: { ...base.examples, ...stored.examples },
     api: { ...base.api, ...stored.api },
+    layouts: { ...base.layouts, ...stored.layouts },
   };
 }
 

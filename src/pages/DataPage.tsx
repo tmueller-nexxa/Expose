@@ -8,9 +8,9 @@ import {
   type StoredFile,
   type StyleText,
 } from "../lib/types";
-import { MODEL_OPTIONS, testApiKey } from "../lib/ai";
+import { analyzeExampleLayout, MODEL_OPTIONS, testApiKey } from "../lib/ai";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
-import { pdfFirstPageToImage } from "../lib/pdf";
+import { pdfAllPagesToImages, pdfFirstPageToImage } from "../lib/pdf";
 import {
   IconCheck,
   IconData,
@@ -28,6 +28,10 @@ export function DataPage() {
   const [keyDraft, setKeyDraft] = useState(data.api.apiKey);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<
+    { ok: boolean; msg: string } | null
+  >(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState<
     { ok: boolean; msg: string } | null
   >(null);
 
@@ -61,6 +65,81 @@ export function DataPage() {
         [activeType]: prev.examples[activeType].filter((e) => e.id !== id),
       },
     }));
+  }
+
+  // Beispielseiten als Bilder gewinnen (PDF rendern / Bilder direkt).
+  async function collectPageImages(files: StoredFile[]): Promise<{
+    images: string[];
+    source: string;
+  }> {
+    const pdf = files.find((f) => f.mime === "application/pdf");
+    if (pdf) {
+      const imgs = await pdfAllPagesToImages(pdf.dataUrl, 10);
+      return { images: imgs, source: pdf.name };
+    }
+    const imgFiles = files.filter((f) => f.mime.startsWith("image/"));
+    return {
+      images: imgFiles.slice(0, 10).map((f) => f.dataUrl),
+      source: imgFiles[0]?.name ?? "Bilder",
+    };
+  }
+
+  // KI leitet aus den Beispielen die Seitenstruktur ab und speichert sie.
+  async function runLayoutAnalysis() {
+    setAnalyzeMsg(null);
+    const files = data.examples[activeType];
+    if (files.length === 0) {
+      setAnalyzeMsg({ ok: false, msg: "Bitte zuerst ein Beispiel hochladen." });
+      return;
+    }
+    if (!data.api.apiKey) {
+      setAnalyzeMsg({ ok: false, msg: "Bitte zuerst einen API-Key eintragen." });
+      return;
+    }
+    setAnalyzing(true);
+    try {
+      const { images, source } = await collectPageImages(files);
+      if (images.length === 0) {
+        setAnalyzeMsg({
+          ok: false,
+          msg: "Aus dem Beispiel konnten keine Seiten gelesen werden.",
+        });
+        return;
+      }
+      const res = await analyzeExampleLayout(data.api, images, activeType);
+      if (!res.ok) {
+        setAnalyzeMsg({ ok: false, msg: res.message });
+        return;
+      }
+      updateData((prev) => ({
+        ...prev,
+        layouts: {
+          ...prev.layouts,
+          [activeType]: {
+            pages: res.pages,
+            source,
+            pageCount: res.pages.length,
+            createdAt: Date.now(),
+          },
+        },
+      }));
+      setAnalyzeMsg({
+        ok: true,
+        msg: `Aufbau übernommen: ${res.pages.length} Seite(n) aus „${source}".`,
+      });
+    } catch (err) {
+      setAnalyzeMsg({ ok: false, msg: (err as Error).message });
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  function clearLayout() {
+    updateData((prev) => ({
+      ...prev,
+      layouts: { ...prev.layouts, [activeType]: null },
+    }));
+    setAnalyzeMsg(null);
   }
 
   // --- Stiltexte ---------------------------------------------------------
@@ -129,6 +208,7 @@ export function DataPage() {
   }
 
   const examples = data.examples[activeType];
+  const activeLayout = data.layouts[activeType];
 
   return (
     <div className="app-shell">
@@ -200,6 +280,53 @@ export function DataPage() {
               ))}
             </div>
           )}
+
+          <div className="layout-panel">
+            <div className="layout-panel-head">
+              <div>
+                <div className="lp-title">Seitenstruktur übernehmen</div>
+                <div className="lp-desc">
+                  Die KI liest das Beispiel ein und baut den Aufbau (Seiten,
+                  Bild- und Textbereiche, Logo-Position) als Blanko-Vorlage nach.
+                </div>
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={runLayoutAnalysis}
+                disabled={
+                  analyzing || examples.length === 0 || !data.api.apiKey
+                }
+              >
+                {analyzing ? "KI analysiert …" : "Aufbau aus Beispielen übernehmen"}
+              </button>
+            </div>
+
+            {activeLayout && (
+              <div className="lp-current">
+                <span className="badge badge-ok">
+                  <IconCheck size={13} /> Aufbau aktiv
+                </span>
+                <span className="lp-current-text">
+                  {activeLayout.pageCount} Seite(n) · Quelle: „{activeLayout.source}"
+                </span>
+                <button className="btn btn-danger" onClick={clearLayout}>
+                  Struktur entfernen
+                </button>
+              </div>
+            )}
+
+            {analyzeMsg && (
+              <div className={`key-status ${analyzeMsg.ok ? "ok" : "err"}`}>
+                {analyzeMsg.ok && <IconCheck size={16} />}
+                {analyzeMsg.msg}
+              </div>
+            )}
+            {examples.length === 0 && (
+              <div className="hint" style={{ marginTop: 8 }}>
+                Zuerst ein Beispiel-Exposé hochladen, dann den Aufbau übernehmen.
+              </div>
+            )}
+          </div>
         </section>
 
         {/* 2 · Stiltexte */}

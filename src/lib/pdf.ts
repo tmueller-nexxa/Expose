@@ -32,6 +32,37 @@ export async function pdfFirstPageToImage(
   }
 }
 
+// Rendert bis zu maxPages Seiten eines PDF in Bild-DataURLs.
+export async function pdfAllPagesToImages(
+  dataUrl: string,
+  maxPages = 8,
+  maxWidth = 900,
+): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    const base64 = dataUrl.split(",")[1] ?? "";
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const count = Math.min(pdf.numPages, maxPages);
+    for (let i = 1; i <= count; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1 });
+      const scale = Math.min(maxWidth / viewport.width, 2);
+      const scaled = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(scaled.width);
+      canvas.height = Math.ceil(scaled.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+      await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+      out.push(canvas.toDataURL("image/jpeg", 0.82));
+    }
+  } catch (err) {
+    console.warn("PDF-Seiten-Rendering fehlgeschlagen:", err);
+  }
+  return out;
+}
+
 export async function pdfPageCount(dataUrl: string): Promise<number> {
   try {
     const base64 = dataUrl.split(",")[1] ?? "";

@@ -225,6 +225,43 @@
   object-fit: contain;
 }
 
+.layout-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+}
+.layout-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.lp-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+.lp-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 3px;
+  max-width: 60ch;
+}
+.lp-current {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.lp-current-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .key-status {
   display: inline-flex;
   align-items: center;

@@ -6,11 +6,15 @@
 import type {
   ExposeProject,
   ExposeType,
+  LayoutPage,
   Page,
   PageElement,
   StoredFile,
+  StoredLayout,
+  TextElement,
 } from "./types";
 import { uid } from "./util";
+import { REF_H } from "../editor/constants";
 
 let zCounter = 1;
 
@@ -187,6 +191,135 @@ export function createProject(
     type,
     title: `${title} – Exposé`,
     pages,
+    updatedAt: Date.now(),
+  };
+}
+
+// --- Projekt aus der KI-gelernten Struktur (Beispiel-Exposé) -------------
+
+function textElement(
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  opts: {
+    fontSize: number;
+    weight: number;
+    color: string;
+    align: "left" | "center" | "right";
+    kind: "heading" | "text";
+  },
+): TextElement {
+  return {
+    id: uid("el"),
+    kind: opts.kind,
+    x,
+    y,
+    w,
+    h,
+    z: zCounter++,
+    text,
+    fontSize: opts.fontSize,
+    align: opts.align,
+    color: opts.color,
+    background: "rgba(0,0,0,0)",
+    fontWeight: opts.weight,
+  };
+}
+
+function blocksToPage(
+  lp: LayoutPage,
+  logo: StoredFile | null,
+  accent: string,
+): Page {
+  zCounter = 1;
+  const elements: PageElement[] = [];
+  for (const b of lp.blocks) {
+    if (b.type === "image") {
+      elements.push(imageSlot(b.x, b.y, b.w, b.h));
+    } else if (b.type === "logo") {
+      if (logo) {
+        elements.push({
+          id: uid("el"),
+          kind: "logo",
+          x: b.x,
+          y: b.y,
+          w: b.w,
+          h: b.h,
+          z: 999,
+          src: logo.dataUrl,
+        });
+      } else {
+        elements.push(
+          textElement("LOGO", b.x, b.y, b.w, Math.max(b.h, 0.04), {
+            fontSize: 14,
+            weight: 700,
+            color: accent,
+            align: "left",
+            kind: "heading",
+          }),
+        );
+      }
+    } else if (b.type === "heading") {
+      // Schriftgroesse aus Blockhoehe ableiten.
+      const fs = Math.min(44, Math.max(13, Math.round(b.h * REF_H * 0.55)));
+      elements.push(
+        textElement(
+          b.text || "Überschrift",
+          b.x,
+          b.y,
+          b.w,
+          Math.max(b.h, 0.04),
+          {
+            fontSize: fs,
+            weight: 700,
+            color: "#1f2d3d",
+            align: b.align ?? "left",
+            kind: "heading",
+          },
+        ),
+      );
+    } else {
+      // text
+      elements.push(
+        textElement(
+          b.text || "Beschreibungstext – hier bearbeiten …",
+          b.x,
+          b.y,
+          b.w,
+          Math.max(b.h, 0.06),
+          {
+            fontSize: 14,
+            weight: 400,
+            color: "#5b6b7b",
+            align: b.align ?? "left",
+            kind: "text",
+          },
+        ),
+      );
+    }
+  }
+  return {
+    id: uid("pg"),
+    title: lp.title || "Seite",
+    background: "#ffffff",
+    elements,
+  };
+}
+
+export function createProjectFromLayout(
+  type: ExposeType,
+  layout: StoredLayout,
+  logo: StoredFile | null,
+): ExposeProject {
+  const accent = ACCENT[type];
+  const pages = layout.pages.map((lp) => blocksToPage(lp, logo, accent));
+  return {
+    id: uid("proj"),
+    type,
+    title: `${TITLE[type]} – Exposé`,
+    pages: pages.length > 0 ? pages : createProject(type, logo).pages,
     updatedAt: Date.now(),
   };
 }

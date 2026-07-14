@@ -9,7 +9,7 @@ import {
   type PageElement,
   type TextElement,
 } from "../lib/types";
-import { createProject } from "../lib/templates";
+import { createProject, createProjectFromLayout } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
@@ -50,7 +50,12 @@ export function EditorPage() {
     let alive = true;
     (async () => {
       const existing = await loadProject(exType);
-      const proj = existing ?? createProject(exType, data.logo);
+      const layout = data.layouts[exType];
+      // Neues Projekt: gelernte Struktur nutzen, sonst Standardvorlage.
+      const fresh = layout
+        ? createProjectFromLayout(exType, layout, data.logo)
+        : createProject(exType, data.logo);
+      const proj = existing ?? fresh;
       if (!alive) return;
       projectRef.current = proj;
       setProject(proj);
@@ -305,10 +310,31 @@ export function EditorPage() {
     );
   }
 
+  function rebuildFromStructure() {
+    const layout = data.layouts[exType];
+    const msg = layout
+      ? "Aktuellen Aufbau verwerfen und neu aus den analysierten Beispielen aufbauen? Bereits platzierte Bilder und Texte gehen dabei verloren."
+      : "Aktuellen Aufbau verwerfen und die Standardvorlage wiederherstellen? Bereits platzierte Bilder und Texte gehen dabei verloren.";
+    if (!window.confirm(msg)) return;
+    const proj = layout
+      ? createProjectFromLayout(exType, layout, data.logo)
+      : createProject(exType, data.logo);
+    commit(proj);
+    setPageIndex(0);
+    setSelectedId(null);
+    setEditingId(null);
+    flash(
+      layout
+        ? "Aufbau aus den Beispielen übernommen."
+        : "Standardaufbau wiederhergestellt.",
+    );
+  }
+
   if (!project || !typeMeta) {
     return <div className="loading-screen">Exposé wird vorbereitet …</div>;
   }
 
+  const hasLayout = !!data.layouts[exType];
   const page = project.pages[pageIndex];
   const selected = page.elements.find((e) => e.id === selectedId) ?? null;
   const hasImages = project.pages.some((pg) =>
@@ -323,6 +349,11 @@ export function EditorPage() {
         </button>
         <span className="type-pill">{typeMeta.label}</span>
         <span className="title">{project.title}</span>
+        {hasLayout && (
+          <span className="badge badge-ok" title="Aufbau aus Beispiel-Exposés übernommen">
+            Aufbau aus Beispiel
+          </span>
+        )}
 
         <div className="spacer" />
 
@@ -341,6 +372,18 @@ export function EditorPage() {
           </span>
         )}
 
+        <button
+          className="btn btn-ghost"
+          onClick={rebuildFromStructure}
+          disabled={!!progress}
+          title={
+            hasLayout
+              ? "Seiten neu aus den analysierten Beispielen aufbauen"
+              : "Standardaufbau wiederherstellen"
+          }
+        >
+          Neu aufbauen
+        </button>
         <button
           className="btn btn-outline"
           onClick={() => window.print()}

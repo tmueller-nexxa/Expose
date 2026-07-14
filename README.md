@@ -10,7 +10,9 @@ Bild zu verdecken. Alles bleibt frei per Maus anpassbar.
 - **Login-Startseite** (Demo-Login: beliebige E-Mail + Passwort)
 - **Typ-Auswahl**: Einfamilienhaus · Wohnung · Mehrfamilienhaus · Gewerbeimmobilie
 - **Datenbereich** mit vier Uploads:
-  1. **Beispiel-Exposés** (PDF/Bilder) je Typ – ihr Aufbau dient als Vorlage
+  1. **Beispiel-Exposés** (PDF/Bilder) je Typ – die KI liest sie ein und
+     **übernimmt die Seitenstruktur** (Seitenzahl, Bild-/Text-/Logo-Bereiche,
+     Überschriften) per Button „Aufbau aus Beispielen übernehmen"
   2. **Schreibstil-Texte** – die KI übernimmt Tonfall und Wortwahl
   3. **Logo** – wird automatisch auf jeder Seite platziert
   4. **API-Key** (Anthropic Claude) inkl. Modellauswahl und Verbindungstest
@@ -47,10 +49,13 @@ npm run typecheck  # nur TypeScript prüfen
 1. Anmelden.
 2. Im **Datenbereich** Beispiele, Stiltexte und Logo hochladen sowie den
    Anthropic-API-Key eintragen (Verbindung testen).
-3. Auf der Startseite den Immobilientyp wählen – der Blanko-Aufbau erscheint.
-4. Bilder per Drag & Drop auf die Seiten ziehen.
-5. Oben **„Generieren"** klicken. Die KI schreibt und platziert die Texte.
-6. Bei Bedarf alles per Maus feinjustieren und über **Export** als PDF sichern.
+3. Im Datenbereich pro Typ „Aufbau aus Beispielen übernehmen" klicken – die KI
+   leitet die Seitenstruktur aus dem Beispiel-Exposé ab.
+4. Auf der Startseite den Immobilientyp wählen – der Blanko-Aufbau erscheint
+   (bei vorhandener gelernter Struktur exakt danach, sonst als Standardvorlage).
+5. Bilder per Drag & Drop auf die Seiten ziehen.
+6. Oben **„Generieren"** klicken. Die KI schreibt und platziert die Texte.
+7. Bei Bedarf alles per Maus feinjustieren und über **Export** als PDF sichern.
 
 ## Hinweise
 
