@@ -43,7 +43,26 @@
   opacity: 0.5;
   pointer-events: none;
 }
-.login-hero > *:not(.hero-skyline) {
+/* Echtes Objektfoto als Hero-Hintergrund */
+.hero-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+}
+.login-hero.has-cover::after {
+  background: linear-gradient(
+    150deg,
+    rgba(10, 20, 34, 0.9),
+    rgba(13, 27, 42, 0.62) 55%,
+    rgba(34, 58, 94, 0.5)
+  );
+}
+.login-hero.has-cover::before {
+  opacity: 0.4;
+}
+.login-hero > *:not(.hero-skyline):not(.hero-cover) {
   position: relative;
   z-index: 1;
 }

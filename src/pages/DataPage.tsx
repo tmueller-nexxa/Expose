@@ -190,6 +190,20 @@ export function DataPage() {
     updateData((prev) => ({ ...prev, logo }));
   }
 
+  async function setCover(files: File[]) {
+    const f = files[0];
+    if (!f) return;
+    const cover: StoredFile = {
+      id: uid("cover"),
+      name: f.name,
+      mime: f.type,
+      size: f.size,
+      dataUrl: await fileToDataUrl(f),
+      addedAt: Date.now(),
+    };
+    updateData((prev) => ({ ...prev, cover }));
+  }
+
   // --- API ---------------------------------------------------------------
   function saveKey(patch: Partial<typeof data.api>) {
     updateData((prev) => ({ ...prev, api: { ...prev.api, ...patch } }));
@@ -420,6 +434,31 @@ export function DataPage() {
                 <button
                   className="btn btn-danger"
                   onClick={() => updateData((p) => ({ ...p, logo: null }))}
+                >
+                  <IconTrash size={16} /> Entfernen
+                </button>
+              </div>
+            )}
+
+            <div className="divider" />
+            <h3 style={{ fontSize: 15, marginBottom: 4 }}>Titelbild (Objektfoto)</h3>
+            <p className="section-desc" style={{ marginLeft: 0 }}>
+              Ihr echtes Foto für den Hero auf Login- und Startseite.
+            </p>
+            <Dropzone
+              accept="image/*"
+              multiple={false}
+              onFiles={setCover}
+              title="Titelbild hochladen"
+              hint="Querformat empfohlen (z. B. 1600×900)"
+              compact
+            />
+            {data.cover && (
+              <div className="cover-preview">
+                <img src={data.cover.dataUrl} alt="Titelbild" />
+                <button
+                  className="btn btn-danger"
+                  onClick={() => updateData((p) => ({ ...p, cover: null }))}
                 >
                   <IconTrash size={16} /> Entfernen
                 </button>

@@ -6,7 +6,7 @@ import { SkylineBanner } from "../components/Illustrations";
 import "./LoginPage.css";
 
 export function LoginPage() {
-  const { login, loggedIn } = useApp();
+  const { login, loggedIn, data } = useApp();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,10 +30,17 @@ export function LoginPage() {
 
   return (
     <div className="login-screen">
-      <div className="login-hero">
-        <div className="hero-skyline">
-          <SkylineBanner />
-        </div>
+      <div className={`login-hero ${data.cover ? "has-cover" : ""}`}>
+        {data.cover ? (
+          <div
+            className="hero-cover"
+            style={{ backgroundImage: `url(${data.cover.dataUrl})` }}
+          />
+        ) : (
+          <div className="hero-skyline">
+            <SkylineBanner />
+          </div>
+        )}
         <div className="mark">
           <span className="box">E</span>
           Exposé&nbsp;KI

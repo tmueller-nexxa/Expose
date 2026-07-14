@@ -99,6 +99,8 @@ export interface AppData {
   examples: Record<ExposeType, StoredFile[]>;
   styleTexts: StyleText[];
   logo: StoredFile | null;
+  // Titelbild / Objektfoto fuer Login- und Startseiten-Hero.
+  cover: StoredFile | null;
   api: ApiSettings;
   // Pro Typ: aus den Beispielen uebernommene Seitenstruktur (oder null).
   layouts: Record<ExposeType, StoredLayout | null>;

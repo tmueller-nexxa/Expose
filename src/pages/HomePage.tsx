@@ -51,13 +51,28 @@ export function HomePage() {
     <div className="app-shell">
       <TopBar />
       <div className="page-wrap">
-        <div className="home-head">
-          <h1>Neues Exposé erstellen</h1>
-          <p>
-            Wählen Sie den Immobilientyp. Der Aufbau richtet sich nach Ihren im
-            Datenbereich hinterlegten Beispielen.
-          </p>
-        </div>
+        {data.cover ? (
+          <div
+            className="home-hero"
+            style={{ backgroundImage: `url(${data.cover.dataUrl})` }}
+          >
+            <div className="home-hero-overlay">
+              <h1>Neues Exposé erstellen</h1>
+              <p>
+                Wählen Sie den Immobilientyp. Der Aufbau richtet sich nach Ihren
+                im Datenbereich hinterlegten Beispielen.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="home-head">
+            <h1>Neues Exposé erstellen</h1>
+            <p>
+              Wählen Sie den Immobilientyp. Der Aufbau richtet sich nach Ihren im
+              Datenbereich hinterlegten Beispielen.
+            </p>
+          </div>
+        )}
 
         <div className="setup-banner">
           <div className="status-dots">
@@ -76,23 +91,32 @@ export function HomePage() {
         </div>
 
         <div className="type-grid">
-          {EXPOSE_TYPES.map((t) => (
-            <button
-              key={t.id}
-              className={`type-card ${t.id}`}
-              onClick={() => navigate(`/editor/${t.id}`)}
-            >
-              <div className="card-scene">
-                {SCENES[t.id]}
-                <span className="scene-badge">{ICONS[t.id]}</span>
-              </div>
-              <div className="card-body">
-                <h3>{t.label}</h3>
-                <div className="desc">{t.description}</div>
-                <span className="go">Exposé öffnen →</span>
-              </div>
-            </button>
-          ))}
+          {EXPOSE_TYPES.map((t) => {
+            const photo = data.examples[t.id].find((f) =>
+              f.mime.startsWith("image/"),
+            )?.dataUrl;
+            return (
+              <button
+                key={t.id}
+                className={`type-card ${t.id}`}
+                onClick={() => navigate(`/editor/${t.id}`)}
+              >
+                <div className="card-scene">
+                  {photo ? (
+                    <img className="card-photo" src={photo} alt={t.label} />
+                  ) : (
+                    SCENES[t.id]
+                  )}
+                  <span className="scene-badge">{ICONS[t.id]}</span>
+                </div>
+                <div className="card-body">
+                  <h3>{t.label}</h3>
+                  <div className="desc">{t.description}</div>
+                  <span className="go">Exposé öffnen →</span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

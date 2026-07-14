@@ -78,6 +78,7 @@ export function emptyAppData(): AppData {
     },
     styleTexts: [],
     logo: null,
+    cover: null,
     api: {
       provider: "anthropic",
       apiKey: "",
