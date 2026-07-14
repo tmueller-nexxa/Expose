@@ -14,3 +14,4 @@ yarn-error.log*
 # TS build info
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+dist-single

@@ -8,6 +8,9 @@ const DB_VERSION = 1;
 const STORE = "kv";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+// Fallback fuer Umgebungen ohne IndexedDB (z.B. Sandbox-/Vorschau-Frames).
+const memStore = new Map<string, unknown>();
+let useMemory = typeof indexedDB === "undefined";
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
@@ -26,23 +29,38 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 async function idbGet<T>(key: string): Promise<T | undefined> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).get(key);
-    req.onsuccess = () => resolve(req.result as T | undefined);
-    req.onerror = () => reject(req.error);
-  });
+  if (useMemory) return memStore.get(key) as T | undefined;
+  try {
+    const db = await openDb();
+    return await new Promise<T | undefined>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readonly");
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => resolve(req.result as T | undefined);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    useMemory = true;
+    return memStore.get(key) as T | undefined;
+  }
 }
 
 async function idbSet(key: string, value: unknown): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  if (useMemory) {
+    memStore.set(key, value);
+    return;
+  }
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    useMemory = true;
+    memStore.set(key, value);
+  }
 }
 
 // --- Konkrete Speicher-Helfer -------------------------------------------
