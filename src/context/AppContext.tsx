@@ -13,6 +13,7 @@ import {
   isLoggedIn as readLocalAuth,
   loadAppData,
   saveAppData,
+  setCloudErrorHandler,
   setCloudUser,
   setLoggedIn as writeLocalAuth,
 } from "../lib/storage";
@@ -23,6 +24,7 @@ import {
   authReset,
   cloudEnabled,
   mapAuthError,
+  mapFirestoreError,
   onAuthChanged,
   type AuthUser,
 } from "../lib/cloud";
@@ -32,6 +34,10 @@ interface AppContextValue {
   loggedIn: boolean;
   cloudMode: boolean;
   authUser: AuthUser | null;
+  // Fehler beim Laden/Speichern der Cloud-Daten (z.B. Sicherheitsregeln
+  // fehlen noch). Wird angezeigt, damit die App nicht "einfach nichts tut".
+  cloudError: string | null;
+  clearCloudError: () => void;
   // Im Cloud-Modus: echte Registrierung/Anmeldung/Passwort-Reset gegen Firebase.
   // Im lokalen Demo-Modus: jede nicht-leere Eingabe wird akzeptiert.
   login: (email: string, password: string) => Promise<void>;
@@ -49,33 +55,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [loggedIn, setLoggedInState] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [data, setData] = useState<AppData>(emptyAppData());
+
+  // Fehlgeschlagene Cloud-Speicherversuche (z.B. fehlende Sicherheitsregeln)
+  // sichtbar machen, statt sie lautlos verschwinden zu lassen.
+  useEffect(() => {
+    if (!cloud) return;
+    setCloudErrorHandler((msg) =>
+      setCloudError(
+        "Cloud-Speichern fehlgeschlagen (" +
+          msg +
+          "). Bitte prüfen, ob die Sicherheitsregeln deployt sind (SETUP-BACKEND.md, Schritt 7).",
+      ),
+    );
+    return () => setCloudErrorHandler(null);
+  }, [cloud]);
 
   useEffect(() => {
     let alive = true;
 
     if (cloud) {
-      // Sicherheitsnetz: falls Firebase in einer netzwerkgesperrten Umgebung
-      // haengt, nicht ewig auf dem Ladebildschirm stehen bleiben.
+      // Sicherheitsnetz: egal was passiert (Netzwerkproblem, fehlende
+      // Sicherheitsregeln, haengende Anfrage) - der Ladebildschirm darf nie
+      // fuer immer stehen bleiben.
       const safety = window.setTimeout(() => {
         if (alive) setReady(true);
-      }, 6000);
+      }, 8000);
+      const finish = () => {
+        window.clearTimeout(safety);
+        if (alive) setReady(true);
+      };
 
       const unsub = onAuthChanged(async (u) => {
         if (!alive) return;
-        window.clearTimeout(safety);
         setAuthUser(u);
         setCloudUser(u?.uid ?? null);
+        setCloudError(null);
         if (u) {
-          const loaded = await loadAppData();
-          if (!alive) return;
-          setData(loaded);
-          setLoggedInState(true);
+          try {
+            const loaded = await loadAppData();
+            if (!alive) return;
+            setData(loaded);
+            setLoggedInState(true);
+          } catch (e) {
+            if (!alive) return;
+            console.error("Cloud-Daten konnten nicht geladen werden:", e);
+            // Trotzdem anmelden (mit leeren Daten), aber Fehler sichtbar
+            // machen - typischste Ursache: Sicherheitsregeln noch nicht
+            // deployt (siehe SETUP-BACKEND.md).
+            setData(emptyAppData());
+            setLoggedInState(true);
+            setCloudError(
+              "Cloud-Daten konnten nicht geladen werden (" +
+                mapFirestoreError(e) +
+                "). Bitte prüfen, ob die Sicherheitsregeln deployt sind (SETUP-BACKEND.md, Schritt 7).",
+            );
+          }
         } else {
           setData(emptyAppData());
           setLoggedInState(false);
         }
-        setReady(true);
+        finish();
       });
       return () => {
         alive = false;
@@ -164,6 +205,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loggedIn,
       cloudMode: cloud,
       authUser,
+      cloudError,
+      clearCloudError: () => setCloudError(null),
       login,
       register,
       resetPassword,
@@ -171,7 +214,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       data,
       updateData,
     }),
-    [ready, loggedIn, cloud, authUser, login, register, resetPassword, logout, data, updateData],
+    [
+      ready,
+      loggedIn,
+      cloud,
+      authUser,
+      cloudError,
+      login,
+      register,
+      resetPassword,
+      logout,
+      data,
+      updateData,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

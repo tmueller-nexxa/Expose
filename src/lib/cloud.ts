@@ -117,6 +117,22 @@ export function mapAuthError(e: unknown): string {
   }
 }
 
+// Firestore-/Storage-Fehlercodes in verstaendliche Meldungen uebersetzen.
+export function mapFirestoreError(e: unknown): string {
+  const code = (e as { code?: string })?.code ?? "";
+  switch (code) {
+    case "permission-denied":
+    case "storage/unauthorized":
+      return "Zugriff verweigert – Sicherheitsregeln sind noch nicht eingerichtet";
+    case "unavailable":
+      return "Server nicht erreichbar";
+    case "unauthenticated":
+      return "Nicht angemeldet";
+    default:
+      return (e as Error)?.message ?? "Unbekannter Fehler";
+  }
+}
+
 // --- Blobs (DataURLs) nach Storage auslagern -----------------------------
 
 // Verhindert wiederholtes Hochladen desselben Bildes bei jedem Speichern

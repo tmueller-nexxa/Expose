@@ -285,6 +285,35 @@ h4 {
   color: var(--text-muted);
 }
 
+.cloud-error-banner {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  color: var(--danger);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.cloud-error-banner button {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.cloud-error-banner button:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
 /* --- Utility ---------------------------------------------------------- */
 .row {
   display: flex;

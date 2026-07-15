@@ -10,8 +10,17 @@ import {
   cloudLoadProject,
   cloudSaveAppData,
   cloudSaveProject,
+  mapFirestoreError,
   resetUploadCache,
 } from "./cloud";
+
+// Wird von AppContext gesetzt, damit fehlgeschlagene Cloud-Speicherversuche
+// (z.B. fehlende Sicherheitsregeln) sichtbar gemacht werden koennen, statt
+// lautlos zu verschwinden.
+let onCloudError: ((msg: string) => void) | null = null;
+export function setCloudErrorHandler(fn: ((msg: string) => void) | null): void {
+  onCloudError = fn;
+}
 
 const DB_NAME = "expose-ki";
 const DB_VERSION = 1;
@@ -159,7 +168,10 @@ export function saveAppData(data: AppData): void {
   const uid = useCloud();
   if (uid) {
     debounced(`appdata:${uid}`, () => {
-      void cloudSaveAppData(uid, data);
+      cloudSaveAppData(uid, data).catch((e) => {
+        console.error("Cloud-Speichern (appData) fehlgeschlagen:", e);
+        onCloudError?.(mapFirestoreError(e));
+      });
     });
     return;
   }
@@ -175,8 +187,14 @@ export async function loadProject(
 ): Promise<ExposeProject | undefined> {
   const uid = useCloud();
   if (uid) {
-    const cloud = await cloudLoadProject(uid, type);
-    return cloud ?? undefined;
+    try {
+      const cloud = await cloudLoadProject(uid, type);
+      return cloud ?? undefined;
+    } catch (e) {
+      console.error("Cloud-Laden (project) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+      return undefined;
+    }
   }
   return idbGet<ExposeProject>(projectKey(type));
 }
@@ -185,7 +203,10 @@ export function saveProject(project: ExposeProject): void {
   const uid = useCloud();
   if (uid) {
     debounced(`project:${uid}:${project.type}`, () => {
-      void cloudSaveProject(uid, project);
+      cloudSaveProject(uid, project).catch((e) => {
+        console.error("Cloud-Speichern (project) fehlgeschlagen:", e);
+        onCloudError?.(mapFirestoreError(e));
+      });
     });
     return;
   }
