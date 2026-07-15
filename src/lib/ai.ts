@@ -10,6 +10,7 @@
 import type {
   ApiSettings,
   ExposeType,
+  LayoutBlock,
   LayoutPage,
   StyleText,
 } from "./types";
@@ -358,20 +359,27 @@ async function analyzeLayoutChunk(
   const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
   const s = (v: unknown) => Number(v) * scale;
 
+  const ALIGNS = new Set(["left", "center", "right"]);
+
   return input.pages.map((pg) => ({
     title: String(pg.title ?? "Seite").slice(0, 60),
     blocks: (pg.blocks ?? [])
       .filter((b) => b && b.type)
       .slice(0, 30)
-      .map((b) => ({
-        type: b.type,
-        x: clamp01(s(b.x)),
-        y: clamp01(s(b.y)),
-        w: clamp01(s(b.w), 0.02),
-        h: clamp01(s(b.h), 0.01),
-        text: b.text ? String(b.text).slice(0, 200) : undefined,
-        align: b.align,
-      })),
+      .map((b) => {
+        // Nur tatsaechlich vorhandene optionale Felder setzen - niemals
+        // "undefined" (Firestore lehnt Feldwerte mit undefined ab).
+        const block: LayoutBlock = {
+          type: b.type,
+          x: clamp01(s(b.x)),
+          y: clamp01(s(b.y)),
+          w: clamp01(s(b.w), 0.02),
+          h: clamp01(s(b.h), 0.01),
+        };
+        if (b.text) block.text = String(b.text).slice(0, 200);
+        if (b.align && ALIGNS.has(b.align)) block.align = b.align;
+        return block;
+      }),
   }));
 }
 

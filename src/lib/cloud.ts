@@ -158,8 +158,13 @@ async function uploadDataUrl(uid: string, dataUrl: string): Promise<string> {
 }
 
 // Ersetzt rekursiv alle "data:"-Strings durch hochgeladene Storage-URLs.
+// Der Klon laeuft ueber JSON (statt structuredClone), das entfernt dabei
+// nebenbei alle "undefined"-Feldwerte - Firestore lehnt setDoc() sonst mit
+// "Unsupported field value: undefined" ab, egal an welcher Stelle im
+// Objektgraphen ein optionales Feld einmal auf undefined statt ausgelassen
+// gesetzt wird.
 async function offloadBlobs<T>(uid: string, obj: T): Promise<T> {
-  const clone: unknown = structuredClone(obj);
+  const clone: unknown = JSON.parse(JSON.stringify(obj));
   const walk = async (node: unknown): Promise<void> => {
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i++) {
