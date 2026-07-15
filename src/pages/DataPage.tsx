@@ -10,6 +10,7 @@ import {
   type StyleText,
 } from "../lib/types";
 import {
+  analyzeBoilerplatePhotos,
   analyzeExampleLayout,
   MAX_ANALYZE_PAGES,
   MODEL_OPTIONS,
@@ -42,7 +43,7 @@ export function DataPage() {
     { ok: boolean; msg: string } | null
   >(null);
   const [progress, setProgress] = useState<{
-    phase: "render" | "analyze";
+    phase: "render" | "analyze" | "boiler";
     done: number;
     total: number;
   } | null>(null);
@@ -175,6 +176,22 @@ export function DataPage() {
             },
           },
         }));
+      }
+
+      // Fotos auf Impressum/AGB/Widerruf durch Platzhalter ersetzen.
+      // (Kontakt behaelt sein Foto = dein Portrait.)
+      const needPhotos = boilerPages.filter((b) => b.kind !== "kontakt");
+      if (needPhotos.length > 0) {
+        setProgress({ phase: "boiler", done: 0, total: needPhotos.length });
+        for (let i = 0; i < needPhotos.length; i++) {
+          const b = needPhotos[i];
+          const src = pages[b.order]?.image;
+          if (src) {
+            const r = await analyzeBoilerplatePhotos(data.api, src);
+            if (r.ok) b.photoSlots = r.rects;
+          }
+          setProgress({ phase: "boiler", done: i + 1, total: needPhotos.length });
+        }
       }
 
       // Standardseiten global speichern (gelten fuer alle Expose-Typen).
@@ -374,8 +391,10 @@ export function DataPage() {
                 <div className="lp-desc">
                   Die KI liest das Beispiel ein und baut den Aufbau als
                   Blanko-Vorlage nach. Standardseiten (Impressum, AGB,
-                  Widerrufsbelehrung, Kontakt) werden dabei <b>1:1 komplett</b>{" "}
-                  übernommen und an jedes Exposé angehängt.
+                  Widerruf, Kontakt) werden mit Text, Schriften &amp; Grafik{" "}
+                  <b>1:1</b> übernommen – auf Impressum/AGB/Widerruf werden die
+                  Objektfotos durch <b>Platzhalter</b> ersetzt (Kontakt behält
+                  sein Foto). Gilt für alle Exposé-Typen.
                 </div>
               </div>
               <button
@@ -394,7 +413,9 @@ export function DataPage() {
                 <div className="lp-progress-label">
                   {progress.phase === "render"
                     ? `Seiten werden gelesen … ${progress.done}/${progress.total || "…"}`
-                    : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
+                    : progress.phase === "boiler"
+                      ? `Standardseiten aufbereiten … ${progress.done}/${progress.total}`
+                      : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
                 </div>
                 <div className="lp-progress-bar">
                   <div

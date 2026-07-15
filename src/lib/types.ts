@@ -102,8 +102,11 @@ export interface BoilerplatePage {
   id: string;
   kind: BoilerplateKind;
   title: string;
-  image: string; // DataURL der exakten Seitenkopie
+  image: string; // DataURL der Seitenkopie (Text/Grafik/Formatierung 1:1)
   order: number; // urspruengliche Seitenreihenfolge
+  // Fotobereiche, die durch Platzhalter ersetzt werden (Anteile 0..1).
+  // Nur bei Impressum/AGB/Widerruf; Kontakt behaelt sein Foto.
+  photoSlots?: { x: number; y: number; w: number; h: number }[];
 }
 
 export interface StoredBoilerplate {

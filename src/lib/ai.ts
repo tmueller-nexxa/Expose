@@ -397,6 +397,94 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// --- Fotobereiche auf einer Standardseite erkennen (fuer Platzhalter) -----
+
+const PHOTO_TOOL = {
+  name: "photo_regions",
+  description:
+    "Liefert die Bereiche echter, austauschbarer Objekt-/Marketingfotos auf einer Exposé-Seite.",
+  input_schema: {
+    type: "object",
+    properties: {
+      photos: {
+        type: "array",
+        description:
+          "Rechtecke echter Fotos (Anteile 0..1). NUR echte Fotografien - KEINE Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Farbflaechen oder Text.",
+        items: {
+          type: "object",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            w: { type: "number" },
+            h: { type: "number" },
+          },
+          required: ["x", "y", "w", "h"],
+        },
+      },
+    },
+    required: ["photos"],
+  },
+};
+
+export async function analyzeBoilerplatePhotos(
+  api: ApiSettings,
+  imageDataUrl: string,
+): Promise<{ ok: true; rects: { x: number; y: number; w: number; h: number }[] } | AiError> {
+  const { mediaType, base64 } = splitDataUrl(imageDataUrl);
+  if (!base64) return { ok: false, message: "Seitenbild konnte nicht gelesen werden." };
+  if (!api.apiKey) return { ok: false, message: "Kein API-Key hinterlegt." };
+
+  try {
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 600,
+      system:
+        "Du erkennst auf einer Immobilien-Exposé-Seite ausschliesslich echte, austauschbare Fotografien (Objekt-/Marketingfotos) und gibst deren Rechtecke zurueck. Logos, Icons, Zierelemente, farbige Balken, Kopf-/Fusszeilen und Text zaehlen NICHT. Antworte nur ueber das Werkzeug photo_regions.",
+      tools: [PHOTO_TOOL],
+      tool_choice: { type: "tool", name: "photo_regions" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: mediaType, data: base64 },
+            },
+            {
+              type: "text",
+              text: "Markiere die Bereiche echter Fotos auf dieser Seite (Anteile 0..1). Wenn keine echten Fotos vorhanden sind, gib eine leere Liste zurueck.",
+            },
+          ],
+        },
+      ],
+    });
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as
+      | { photos?: { x: number; y: number; w: number; h: number }[] }
+      | undefined;
+    const raw = input?.photos ?? [];
+    let maxCoord = 0;
+    for (const r of raw)
+      for (const v of [r.x, r.y, r.w, r.h]) {
+        const n = Number(v);
+        if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
+      }
+    const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
+    const rects = raw
+      .map((r) => ({
+        x: clamp01(Number(r.x) * scale),
+        y: clamp01(Number(r.y) * scale),
+        w: clamp01(Number(r.w) * scale, 0.03),
+        h: clamp01(Number(r.h) * scale, 0.03),
+      }))
+      // Nur nennenswert grosse Fotos (kleine Treffer = wohl Logos/Icons).
+      .filter((r) => r.w >= 0.12 && r.h >= 0.08);
+    return { ok: true, rects };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
 // Kurzer Verbindungstest fuer den Keys-Bereich.
 export async function testApiKey(api: ApiSettings): Promise<AiError | { ok: true }> {
   if (!api.apiKey) return { ok: false, message: "Bitte zuerst einen API-Key eingeben." };

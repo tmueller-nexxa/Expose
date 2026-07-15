@@ -17,30 +17,50 @@ import type {
 import { uid } from "./util";
 import { REF_H } from "../editor/constants";
 
-// Standardseiten (Impressum/AGB/...) als exakte Seitenkopien (Bild) anhaengen.
+// Standardseiten anhaengen: Vorlage (Text/Schriften/Grafik 1:1) als gesperrter
+// Hintergrund; erkannte Fotobereiche werden durch Platzhalter ersetzt.
 function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
   if (!bp || bp.pages.length === 0) return [];
   return [...bp.pages]
     .sort((a, b) => a.order - b.order)
-    .map((p) => ({
-      id: uid("pg"),
-      title: p.title,
-      background: "#ffffff",
-      elements: [
+    .map((p) => {
+      const elements: PageElement[] = [
         {
           id: uid("el"),
-          kind: "image" as const,
+          kind: "image",
           x: 0,
           y: 0,
           w: 1,
           h: 1,
           z: 1,
           src: p.image,
-          fit: "contain" as const,
+          fit: "contain",
           fromBoilerplate: true,
+          locked: true,
         },
-      ],
-    }));
+      ];
+      // Foto-Platzhalter (leer, per Drag&Drop befuellbar) ueber den alten Fotos.
+      let z = 2;
+      for (const slot of p.photoSlots ?? []) {
+        elements.push({
+          id: uid("el"),
+          kind: "image",
+          x: slot.x,
+          y: slot.y,
+          w: slot.w,
+          h: slot.h,
+          z: z++,
+          src: "",
+          fit: "cover",
+        });
+      }
+      return {
+        id: uid("pg"),
+        title: p.title,
+        background: "#ffffff",
+        elements,
+      };
+    });
 }
 
 let zCounter = 1;
