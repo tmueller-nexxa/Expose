@@ -8,7 +8,12 @@ import {
   type StoredFile,
   type StyleText,
 } from "../lib/types";
-import { analyzeExampleLayout, MODEL_OPTIONS, testApiKey } from "../lib/ai";
+import {
+  analyzeExampleLayout,
+  MAX_ANALYZE_PAGES,
+  MODEL_OPTIONS,
+  testApiKey,
+} from "../lib/ai";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
 import { pdfAllPagesToImages, pdfFirstPageToImage } from "../lib/pdf";
 import {
@@ -34,6 +39,11 @@ export function DataPage() {
   const [analyzeMsg, setAnalyzeMsg] = useState<
     { ok: boolean; msg: string } | null
   >(null);
+  const [progress, setProgress] = useState<{
+    phase: "render" | "analyze";
+    done: number;
+    total: number;
+  } | null>(null);
 
   // --- Beispiele ---------------------------------------------------------
   async function addExamples(files: File[]) {
@@ -74,12 +84,17 @@ export function DataPage() {
   }> {
     const pdf = files.find((f) => f.mime === "application/pdf");
     if (pdf) {
-      const imgs = await pdfAllPagesToImages(pdf.dataUrl, 12);
+      const imgs = await pdfAllPagesToImages(
+        pdf.dataUrl,
+        MAX_ANALYZE_PAGES,
+        900,
+        (done, total) => setProgress({ phase: "render", done, total }),
+      );
       return { images: imgs, source: pdf.name };
     }
     const imgFiles = files.filter((f) => f.mime.startsWith("image/"));
     return {
-      images: imgFiles.slice(0, 10).map((f) => f.dataUrl),
+      images: imgFiles.slice(0, MAX_ANALYZE_PAGES).map((f) => f.dataUrl),
       source: imgFiles[0]?.name ?? "Bilder",
     };
   }
@@ -97,6 +112,7 @@ export function DataPage() {
       return;
     }
     setAnalyzing(true);
+    setProgress({ phase: "render", done: 0, total: 0 });
     try {
       const { images, source } = await collectPageImages(files);
       if (images.length === 0) {
@@ -106,7 +122,13 @@ export function DataPage() {
         });
         return;
       }
-      const res = await analyzeExampleLayout(data.api, images, activeType);
+      setProgress({ phase: "analyze", done: 0, total: images.length });
+      const res = await analyzeExampleLayout(
+        data.api,
+        images,
+        activeType,
+        (done, total) => setProgress({ phase: "analyze", done, total }),
+      );
       if (!res.ok) {
         setAnalyzeMsg({ ok: false, msg: res.message });
         return;
@@ -131,6 +153,7 @@ export function DataPage() {
       setAnalyzeMsg({ ok: false, msg: (err as Error).message });
     } finally {
       setAnalyzing(false);
+      setProgress(null);
     }
   }
 
@@ -314,6 +337,31 @@ export function DataPage() {
                 {analyzing ? "KI analysiert …" : "Aufbau aus Beispielen übernehmen"}
               </button>
             </div>
+
+            {progress && (
+              <div className="lp-progress">
+                <div className="lp-progress-label">
+                  {progress.phase === "render"
+                    ? `Seiten werden gelesen … ${progress.done}/${progress.total || "…"}`
+                    : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
+                </div>
+                <div className="lp-progress-bar">
+                  <div
+                    style={{
+                      width: `${
+                        progress.total
+                          ? Math.round((progress.done / progress.total) * 100)
+                          : 5
+                      }%`,
+                    }}
+                  />
+                </div>
+                <div className="hint" style={{ marginTop: 6 }}>
+                  Das kann bei großen Exposés ein bis zwei Minuten dauern – bitte
+                  das Fenster geöffnet lassen.
+                </div>
+              </div>
+            )}
 
             {activeLayout && (
               <div className="lp-current">

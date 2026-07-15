@@ -338,40 +338,63 @@ async function analyzeLayoutChunk(
 // Analysiert das Beispiel-Exposé blockweise und fuehrt die Seiten zusammen.
 // Blockweise Verarbeitung verhindert, dass die Antwort bei vielen/dichten
 // Seiten das Ausgabe-Limit sprengt.
+export const MAX_ANALYZE_PAGES = 40;
+
 export async function analyzeExampleLayout(
   api: ApiSettings,
   pageImages: string[],
   type: ExposeType,
+  onProgress?: (pagesDone: number, pagesTotal: number) => void,
 ): Promise<LayoutResult | AiError> {
   if (!api.apiKey) return { ok: false, message: "Kein API-Key hinterlegt." };
   if (pageImages.length === 0)
     return { ok: false, message: "Keine Beispielseiten zum Analysieren gefunden." };
 
-  const imgs = pageImages.slice(0, 12);
+  const imgs = pageImages.slice(0, MAX_ANALYZE_PAGES);
+  const total = imgs.length;
   const BATCH = 4;
   const allPages: LayoutPage[] = [];
-  let lastErr = "";
+  const failedBatches: string[] = [];
+  let done = 0;
+  onProgress?.(0, total);
 
   for (let start = 0; start < imgs.length; start += BATCH) {
     const chunk = imgs.slice(start, start + BATCH);
-    try {
-      const res = await analyzeLayoutChunk(api, chunk, type);
-      if (Array.isArray(res)) allPages.push(...res);
-      else lastErr = res.message;
-    } catch (err) {
-      lastErr = (err as Error).message;
+    // Bis zu 3 Versuche pro Block -> robust gegen kurze Aussetzer.
+    let ok = false;
+    let err = "";
+    for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+      try {
+        const res = await analyzeLayoutChunk(api, chunk, type);
+        if (Array.isArray(res)) {
+          allPages.push(...res);
+          ok = true;
+        } else {
+          err = res.message;
+        }
+      } catch (e) {
+        err = (e as Error).message;
+      }
+      if (!ok && attempt < 3) await sleep(800 * attempt);
     }
+    if (!ok) failedBatches.push(err || "unbekannt");
+    done += chunk.length;
+    onProgress?.(done, total);
   }
 
   if (allPages.length === 0) {
     return {
       ok: false,
       message:
-        lastErr ||
+        failedBatches[0] ||
         "Die KI konnte keine Struktur ableiten. Tipp: Bei sehr umfangreichen/bildlastigen PDFs am besten nur wenige repraesentative Seiten als Bilder (JPG/PNG) hochladen oder das Modell Claude Opus 4.8 waehlen.",
     };
   }
-  return { ok: true, pages: allPages.slice(0, 24) };
+  return { ok: true, pages: allPages };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.

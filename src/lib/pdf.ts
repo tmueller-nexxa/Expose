@@ -33,10 +33,12 @@ export async function pdfFirstPageToImage(
 }
 
 // Rendert bis zu maxPages Seiten eines PDF in Bild-DataURLs.
+// onProgress(done, total) meldet den Render-Fortschritt.
 export async function pdfAllPagesToImages(
   dataUrl: string,
   maxPages = 8,
   maxWidth = 900,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<string[]> {
   const out: string[] = [];
   try {
@@ -44,6 +46,7 @@ export async function pdfAllPagesToImages(
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const count = Math.min(pdf.numPages, maxPages);
+    onProgress?.(0, count);
     for (let i = 1; i <= count; i++) {
       const page = await pdf.getPage(i);
       const viewport = page.getViewport({ scale: 1 });
@@ -56,6 +59,10 @@ export async function pdfAllPagesToImages(
       if (!ctx) continue;
       await page.render({ canvasContext: ctx, viewport: scaled }).promise;
       out.push(canvas.toDataURL("image/jpeg", 0.82));
+      // Canvas freigeben (Speicher bei vielen Seiten).
+      canvas.width = 0;
+      canvas.height = 0;
+      onProgress?.(i, count);
     }
   } catch (err) {
     console.warn("PDF-Seiten-Rendering fehlgeschlagen:", err);
