@@ -48,7 +48,12 @@ Betrag an).
 2. Unten bei **„Meine Apps"** → **„Web"**-Symbol (`</>`) → Namen vergeben
    (z. B. „Expose-KI-Web") → **„App registrieren"**.
 3. Es erscheint ein Code-Block mit `firebaseConfig = { apiKey: "...", ... }`.
-   Diese Werte im nächsten Schritt eintragen.
+   **Hier muss nichts eingegeben werden** – Firebase hat die Werte bereits
+   für Sie eingesetzt, der Block dient nur zum Ablesen/Kopieren. Der
+   `npm install firebase`-Befehl in diesem Schritt ist ebenfalls nicht nötig
+   (bereits Teil dieses Projekts). Einfach die 6 Werte notieren (ohne
+   `measurementId` – wird nicht benötigt) und unten auf **„Weiter zur
+   Konsole"** klicken. Die Werte im nächsten Schritt in GitHub eintragen.
 
 ## 6. Firebase CLI installieren und Projekt verbinden
 
