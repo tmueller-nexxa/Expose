@@ -102,7 +102,7 @@ export function DataPage() {
       if (images.length === 0) {
         setAnalyzeMsg({
           ok: false,
-          msg: "Aus dem Beispiel konnten keine Seiten gelesen werden.",
+          msg: "Aus dem Beispiel konnten keine Seiten gelesen werden. Falls es ein PDF ist: bitte die Seiten als Bilder (JPG/PNG) hochladen.",
         });
         return;
       }

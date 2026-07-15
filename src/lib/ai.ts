@@ -47,17 +47,26 @@ async function callAnthropic(
   api: ApiSettings,
   body: Record<string, unknown>,
 ): Promise<{ content: AnthropicToolUse[] }> {
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": api.apiKey,
-      "anthropic-version": "2023-06-01",
-      // Erlaubt den direkten Aufruf aus dem Browser (CORS).
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": api.apiKey,
+        "anthropic-version": "2023-06-01",
+        // Erlaubt den direkten Aufruf aus dem Browser (CORS).
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    // Netzwerk-/CORS-Fehler (fetch wirft) -> haeufig blockierte Umgebung.
+    throw new Error(
+      "Die KI-Schnittstelle konnte nicht erreicht werden. In der Online-Vorschau/im Artifact sind externe Aufrufe blockiert – bitte die App lokal (npm run dev) oder deployt mit gültigem Anthropic-Key ausführen. Details: " +
+        (e as Error).message,
+    );
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -66,6 +75,10 @@ async function callAnthropic(
       detail = j?.error?.message || detail;
     } catch {
       /* ignore */
+    }
+    if (res.status === 401) {
+      detail =
+        "API-Key ungültig oder nicht autorisiert (401). Bitte den Anthropic-Key im Datenbereich prüfen.";
     }
     throw new Error(detail);
   }
