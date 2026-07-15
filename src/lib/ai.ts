@@ -487,7 +487,11 @@ export async function analyzeBoilerplatePhotos(
       model: api.model,
       max_tokens: 600,
       system:
-        "Du erkennst auf einer Immobilien-Exposé-Seite ausschliesslich echte, austauschbare Fotografien (Objekt-/Marketingfotos) und gibst deren Rechtecke zurueck. Logos, Icons, Zierelemente, farbige Balken, Kopf-/Fusszeilen und Text zaehlen NICHT. Antworte nur ueber das Werkzeug photo_regions.",
+        "Du erkennst auf einer Immobilien-Exposé-Seite ausschliesslich echte, austauschbare Fotografien (z.B. Fotos von Raeumen, Gebaeuden, Personen, Landschaften). " +
+        "KEINE Fotos sind: Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Text, sowie GROSSFLAECHIGE Hintergrund-/Dekor-Elemente wie farbige oder graue Balken, Seitenleisten, Verlaeufe oder Rahmen - auch wenn diese wie ein Bild aussehen. " +
+        "Ein echtes Foto ist in der Regel eine klar begrenzte, in sich geschlossene Aufnahme, NIEMALS ein Element, das ueber die gesamte Seitenhoehe oder den gesamten Seitenrand laeuft. " +
+        "Koordinaten sind Anteile 0..1 der Seitenbreite/-hoehe, Ursprung oben links; x+w darf 1 nicht ueberschreiten, y+h darf 1 nicht ueberschreiten. " +
+        "Bei Unsicherheit lieber gar kein Rechteck zurueckgeben als ein falsches. Antworte nur ueber das Werkzeug photo_regions.",
       tools: [PHOTO_TOOL],
       tool_choice: { type: "tool", name: "photo_regions" },
       messages: [
@@ -519,14 +523,27 @@ export async function analyzeBoilerplatePhotos(
       }
     const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
     const rects = raw
-      .map((r) => ({
-        x: clamp01(Number(r.x) * scale),
-        y: clamp01(Number(r.y) * scale),
-        w: clamp01(Number(r.w) * scale, 0.03),
-        h: clamp01(Number(r.h) * scale, 0.03),
-      }))
-      // Nur nennenswert grosse Fotos (kleine Treffer = wohl Logos/Icons).
-      .filter((r) => r.w >= 0.12 && r.h >= 0.08);
+      .map((r) => {
+        const x = clamp01(Number(r.x) * scale);
+        const y = clamp01(Number(r.y) * scale);
+        // w/h zusaetzlich so begrenzen, dass das Rechteck nie ueber den
+        // rechten/unteren Seitenrand hinausragt (verhindert "spilling over").
+        const w = clamp01(Math.min(Number(r.w) * scale, 1 - x), 0.03);
+        const h = clamp01(Math.min(Number(r.h) * scale, 1 - y), 0.03);
+        return { x, y, w, h };
+      })
+      // Nur nennenswert grosse, aber plausible Fotos: kleine Treffer sind
+      // wohl Logos/Icons, sehr grossflaechige (fast volle Seitenhoehe/-breite
+      // UND deutliche Ausdehnung) sind typischerweise faelschlich erkannte
+      // Hintergrund-/Dekor-Panels, keine echten Fotos.
+      .filter(
+        (r) =>
+          r.w >= 0.12 &&
+          r.h >= 0.08 &&
+          !(r.h > 0.85 && r.w > 0.3) &&
+          !(r.w > 0.85 && r.h > 0.3) &&
+          r.w * r.h <= 0.55,
+      );
     return { ok: true, rects };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
