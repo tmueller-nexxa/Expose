@@ -74,7 +74,7 @@ export function DataPage() {
   }> {
     const pdf = files.find((f) => f.mime === "application/pdf");
     if (pdf) {
-      const imgs = await pdfAllPagesToImages(pdf.dataUrl, 10);
+      const imgs = await pdfAllPagesToImages(pdf.dataUrl, 12);
       return { images: imgs, source: pdf.name };
     }
     const imgFiles = files.filter((f) => f.mime.startsWith("image/"));

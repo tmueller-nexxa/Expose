@@ -264,7 +264,80 @@ const LAYOUT_TOOL = {
   },
 };
 
-// Analysiert die Seitenbilder eines Beispiel-Exposés und liefert die Struktur.
+// Analysiert einen kleinen Block von Seitenbildern (max. ~4) in EINER Anfrage.
+async function analyzeLayoutChunk(
+  api: ApiSettings,
+  chunk: string[],
+  type: ExposeType,
+): Promise<LayoutPage[] | AiError> {
+  const imageBlocks = chunk.map((dataUrl) => {
+    const { mediaType, base64 } = splitDataUrl(dataUrl);
+    return {
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: mediaType, data: base64 },
+    };
+  });
+
+  const system = `Du bist Experte fuer Layout-Analyse von Immobilien-Exposés (${TYPE_LABEL[type]}). Analysiere die gezeigten Beispielseiten und beschreibe den STRUKTURELLEN Aufbau als leere Vorlage. Wichtig: Uebernimm Anordnung, Anzahl und Position der Bild-, Text- und Ueberschriften-Bereiche sowie die Logo-Position moeglichst exakt. Bei Foto-Collagen: jedes Foto als eigenen image-Block. Verwende fuer Ueberschriften generische Abschnittstitel, NICHT die konkreten Objektdaten. Koordinaten als Anteile 0..1. Gib das Ergebnis ausschliesslich ueber das Werkzeug "expose_layout" zurueck.`;
+
+  const data = await callAnthropic(api, {
+    model: api.model,
+    // Grosszuegiges Ausgabe-Budget, damit die Struktur nicht abgeschnitten wird.
+    max_tokens: 4096,
+    system,
+    tools: [LAYOUT_TOOL],
+    tool_choice: { type: "tool", name: "expose_layout" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...imageBlocks,
+          {
+            type: "text",
+            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Erstelle daraus die leere Seitenstruktur (Platzhalter), eine Seite pro Bild, mit Positionen als Anteile 0..1.`,
+          },
+        ],
+      },
+    ],
+  });
+
+  const tool = data.content.find((c) => c.type === "tool_use");
+  const input = tool?.input as { pages?: LayoutPage[] } | undefined;
+  if (!input?.pages || input.pages.length === 0) {
+    return { ok: false, message: "Die KI konnte keine Struktur ableiten." };
+  }
+
+  // Prozent-/Pixelwerte auf 0..1 normalisieren.
+  let maxCoord = 0;
+  for (const pg of input.pages)
+    for (const b of pg.blocks ?? [])
+      for (const v of [b.x, b.y, b.w, b.h]) {
+        const n = Number(v);
+        if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
+      }
+  const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
+  const s = (v: unknown) => Number(v) * scale;
+
+  return input.pages.map((pg) => ({
+    title: String(pg.title ?? "Seite").slice(0, 60),
+    blocks: (pg.blocks ?? [])
+      .filter((b) => b && b.type)
+      .slice(0, 30)
+      .map((b) => ({
+        type: b.type,
+        x: clamp01(s(b.x)),
+        y: clamp01(s(b.y)),
+        w: clamp01(s(b.w), 0.02),
+        h: clamp01(s(b.h), 0.01),
+        text: b.text ? String(b.text).slice(0, 200) : undefined,
+        align: b.align,
+      })),
+  }));
+}
+
+// Analysiert das Beispiel-Exposé blockweise und fuehrt die Seiten zusammen.
+// Blockweise Verarbeitung verhindert, dass die Antwort bei vielen/dichten
+// Seiten das Ausgabe-Limit sprengt.
 export async function analyzeExampleLayout(
   api: ApiSettings,
   pageImages: string[],
@@ -274,76 +347,31 @@ export async function analyzeExampleLayout(
   if (pageImages.length === 0)
     return { ok: false, message: "Keine Beispielseiten zum Analysieren gefunden." };
 
-  const imageBlocks = pageImages.slice(0, 8).map((dataUrl) => {
-    const { mediaType, base64 } = splitDataUrl(dataUrl);
-    return {
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: mediaType, data: base64 },
-    };
-  });
+  const imgs = pageImages.slice(0, 12);
+  const BATCH = 4;
+  const allPages: LayoutPage[] = [];
+  let lastErr = "";
 
-  const system = `Du bist Experte fuer Layout-Analyse von Immobilien-Exposés (${TYPE_LABEL[type]}). Analysiere die gezeigten Beispielseiten und beschreibe den STRUKTURELLEN Aufbau als leere Vorlage. Wichtig: Uebernimm Anordnung, Anzahl und Position der Bild-, Text- und Ueberschriften-Bereiche sowie die Logo-Position moeglichst exakt. Verwende fuer Ueberschriften generische Abschnittstitel, NICHT die konkreten Objektdaten. Gib das Ergebnis ausschliesslich ueber das Werkzeug "expose_layout" zurueck.`;
-
-  try {
-    const data = await callAnthropic(api, {
-      model: api.model,
-      max_tokens: 3000,
-      system,
-      tools: [LAYOUT_TOOL],
-      tool_choice: { type: "tool", name: "expose_layout" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...imageBlocks,
-            {
-              type: "text",
-              text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Erstelle daraus die leere Seitenstruktur (Platzhalter) mit Positionen als Anteile 0..1.`,
-            },
-          ],
-        },
-      ],
-    });
-
-    const tool = data.content.find((c) => c.type === "tool_use");
-    const input = tool?.input as { pages?: LayoutPage[] } | undefined;
-    if (!input?.pages || input.pages.length === 0) {
-      return { ok: false, message: "Die KI konnte keine Struktur ableiten." };
+  for (let start = 0; start < imgs.length; start += BATCH) {
+    const chunk = imgs.slice(start, start + BATCH);
+    try {
+      const res = await analyzeLayoutChunk(api, chunk, type);
+      if (Array.isArray(res)) allPages.push(...res);
+      else lastErr = res.message;
+    } catch (err) {
+      lastErr = (err as Error).message;
     }
-
-    // Manche Modelle liefern Prozent- (0..100) oder Pixelwerte statt 0..1.
-    // Skalierungsfaktor aus dem groessten vorkommenden Wert ableiten.
-    let maxCoord = 0;
-    for (const pg of input.pages)
-      for (const b of pg.blocks ?? [])
-        for (const v of [b.x, b.y, b.w, b.h]) {
-          const n = Number(v);
-          if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
-        }
-    const scale =
-      maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
-    const s = (v: unknown) => Number(v) * scale;
-
-    // Normalisieren / begrenzen.
-    const pages: LayoutPage[] = input.pages.slice(0, 12).map((pg) => ({
-      title: String(pg.title ?? "Seite").slice(0, 60),
-      blocks: (pg.blocks ?? [])
-        .filter((b) => b && b.type)
-        .slice(0, 24)
-        .map((b) => ({
-          type: b.type,
-          x: clamp01(s(b.x)),
-          y: clamp01(s(b.y)),
-          w: clamp01(s(b.w), 0.02),
-          h: clamp01(s(b.h), 0.01),
-          text: b.text ? String(b.text).slice(0, 200) : undefined,
-          align: b.align,
-        })),
-    }));
-    return { ok: true, pages };
-  } catch (err) {
-    return { ok: false, message: (err as Error).message };
   }
+
+  if (allPages.length === 0) {
+    return {
+      ok: false,
+      message:
+        lastErr ||
+        "Die KI konnte keine Struktur ableiten. Tipp: Bei sehr umfangreichen/bildlastigen PDFs am besten nur wenige repraesentative Seiten als Bilder (JPG/PNG) hochladen oder das Modell Claude Opus 4.8 waehlen.",
+    };
+  }
+  return { ok: true, pages: allPages.slice(0, 24) };
 }
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.
