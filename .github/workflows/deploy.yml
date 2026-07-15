@@ -26,7 +26,18 @@ jobs:
           node-version: 20
       - run: npm ci
       # Relative Basis (--base=./) -> laeuft unter jedem Repo-Pfad auf Pages.
+      # Firebase-Werte kommen aus Repo-Variablen (Settings -> Secrets and
+      # variables -> Actions -> Variables). Sie sind nicht geheim (oeffentliche
+      # Web-Konfiguration); bleiben leer, laeuft die App im lokalen Demo-Modus.
       - run: npx vite build --base=./
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_AI_PROXY_URL: ${{ vars.VITE_AI_PROXY_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

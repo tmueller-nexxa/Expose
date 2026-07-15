@@ -10,12 +10,14 @@ import {
   type StyleText,
 } from "../lib/types";
 import {
+  aiReady,
   analyzeBoilerplatePhotos,
   analyzeExampleLayout,
   MAX_ANALYZE_PAGES,
   MODEL_OPTIONS,
   testApiKey,
 } from "../lib/ai";
+import { aiProxyUrl } from "../firebase.config";
 import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
 import { pdfFirstPageToImage, renderPdfPages, type RenderedPage } from "../lib/pdf";
@@ -112,8 +114,13 @@ export function DataPage() {
       setAnalyzeMsg({ ok: false, msg: "Bitte zuerst ein Beispiel hochladen." });
       return;
     }
-    if (!data.api.apiKey) {
-      setAnalyzeMsg({ ok: false, msg: "Bitte zuerst einen API-Key eintragen." });
+    if (!aiReady(data.api)) {
+      setAnalyzeMsg({
+        ok: false,
+        msg: aiProxyUrl
+          ? "Bitte zuerst anmelden."
+          : "Bitte zuerst einen API-Key eintragen.",
+      });
       return;
     }
     setAnalyzing(true);
@@ -401,7 +408,7 @@ export function DataPage() {
                 className="btn btn-primary"
                 onClick={runLayoutAnalysis}
                 disabled={
-                  analyzing || examples.length === 0 || !data.api.apiKey
+                  analyzing || examples.length === 0 || !aiReady(data.api)
                 }
               >
                 {analyzing ? "KI analysiert …" : "Aufbau aus Beispielen übernehmen"}
@@ -614,10 +621,20 @@ export function DataPage() {
                 <h2>API-Schlüssel</h2>
               </div>
             </div>
-            <p className="section-desc" style={{ marginLeft: 0 }}>
-              Ihr Anthropic-Key für die KI-Textgenerierung. Bleibt lokal in
-              Ihrem Browser.
-            </p>
+            {aiProxyUrl ? (
+              <p className="section-desc" style={{ marginLeft: 0 }}>
+                <span className="badge badge-ok" style={{ marginRight: 8 }}>
+                  <IconCheck size={13} /> Server-Proxy aktiv
+                </span>
+                Die KI-Aufrufe laufen sicher über Ihr Konto – ein eigener
+                API-Key ist nicht nötig.
+              </p>
+            ) : (
+              <p className="section-desc" style={{ marginLeft: 0 }}>
+                Ihr Anthropic-Key für die KI-Textgenerierung. Bleibt lokal in
+                Ihrem Browser.
+              </p>
+            )}
 
             <div className="field">
               <label htmlFor="model">KI-Modell</label>
@@ -636,7 +653,15 @@ export function DataPage() {
             </div>
 
             <div className="field">
-              <label htmlFor="apikey">Anthropic API-Key</label>
+              <label htmlFor="apikey">
+                Anthropic API-Key
+                {aiProxyUrl && (
+                  <span className="soft" style={{ fontWeight: 400 }}>
+                    {" "}
+                    (optional – nur als Ersatz für den Server-Proxy)
+                  </span>
+                )}
+              </label>
               <input
                 id="apikey"
                 className="input"
@@ -652,7 +677,7 @@ export function DataPage() {
               <button
                 className="btn btn-outline"
                 onClick={runTest}
-                disabled={testing || !keyDraft.trim()}
+                disabled={testing || (!keyDraft.trim() && !aiProxyUrl)}
               >
                 {testing ? "Teste …" : "Verbindung testen"}
               </button>

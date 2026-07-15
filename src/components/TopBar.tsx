@@ -3,7 +3,7 @@ import { useApp } from "../context/AppContext";
 import { IconLogout } from "./Icons";
 
 export function TopBar() {
-  const { logout } = useApp();
+  const { logout, cloudMode, authUser } = useApp();
   const navigate = useNavigate();
 
   return (
@@ -19,10 +19,15 @@ export function TopBar() {
         <NavLink to="/data">Datenbereich</NavLink>
       </nav>
       <div className="spacer" />
+      {cloudMode && authUser?.email && (
+        <span className="hint" style={{ marginRight: 4 }}>
+          {authUser.email}
+        </span>
+      )}
       <button
         className="btn btn-ghost"
-        onClick={() => {
-          logout();
+        onClick={async () => {
+          await logout();
           navigate("/login");
         }}
       >

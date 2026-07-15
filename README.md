@@ -7,15 +7,19 @@ Bild zu verdecken. Alles bleibt frei per Maus anpassbar.
 
 ## Funktionen
 
-- **Login-Startseite** (Demo-Login: beliebige E-Mail + Passwort)
+- **Login/Registrierung** mit echten Nutzerkonten (Firebase Auth), wenn ein
+  Backend verbunden ist – sonst lokaler Demo-Modus (jede Eingabe akzeptiert)
 - **Typ-Auswahl**: Einfamilienhaus · Wohnung · Mehrfamilienhaus · Gewerbeimmobilie
 - **Datenbereich** mit vier Uploads:
   1. **Beispiel-Exposés** (PDF/Bilder) je Typ – die KI liest sie ein und
      **übernimmt die Seitenstruktur** (Seitenzahl, Bild-/Text-/Logo-Bereiche,
-     Überschriften) per Button „Aufbau aus Beispielen übernehmen"
+     Überschriften) per Button „Aufbau aus Beispielen übernehmen". Seiten wie
+     Impressum/AGB/Widerrufsbelehrung/Kontakt werden **1:1** übernommen (Fotos
+     darauf – außer beim Kontakt – werden durch Platzhalter ersetzt)
   2. **Schreibstil-Texte** – die KI übernimmt Tonfall und Wortwahl
-  3. **Logo** – wird automatisch auf jeder Seite platziert
-  4. **API-Key** (Anthropic Claude) inkl. Modellauswahl und Verbindungstest
+  3. **Logo & Titelbild** – Logo wird automatisch auf jeder Seite platziert
+  4. **API-Key** (Anthropic Claude) inkl. Modellauswahl und Verbindungstest –
+     entfällt, wenn der Server-Proxy (siehe unten) aktiv ist
 - **Editor im Acrobat-Stil**: große Seite links, auswählbare Thumbnails rechts
 - **Drag & Drop** von Bildern auf jede Seite (Bildflächen oder frei)
 - **„Generieren"**: analysiert jedes Bild per KI, erzeugt passenden Text im
@@ -27,12 +31,17 @@ Bild zu verdecken. Alles bleibt frei per Maus anpassbar.
 
 ## Technik
 
-- **React 18 + TypeScript + Vite**, komplett clientseitig
-- **IndexedDB** für Uploads/Projekte, `localStorage` für den Login-Status
-- **Anthropic Claude** (Vision + Text) – Aufruf direkt aus dem Browser mit dem
-  vom Makler hinterlegten API-Key. Der Key verlässt den Browser nur Richtung
-  Anthropic-API.
-- **pdf.js** für PDF-Vorschauen
+- **React 18 + TypeScript + Vite**
+- **Backend (optional, empfohlen): Firebase** – Authentication (E-Mail/
+  Passwort), Firestore (strukturierte Daten) und Storage (Bilder/PDFs), pro
+  Nutzer strikt getrennt über Sicherheitsregeln (`firestore.rules`,
+  `storage.rules`). Ohne konfiguriertes Firebase läuft die App automatisch im
+  **lokalen Demo-Modus** (IndexedDB im Browser) – siehe
+  [`SETUP-BACKEND.md`](./SETUP-BACKEND.md) zum Einrichten.
+- **Anthropic Claude** (Vision + Text) – entweder direkt aus dem Browser mit
+  einem selbst hinterlegten API-Key, oder sicher über eine **Cloud Function**
+  (`functions/`), die den Key serverseitig geheim hält (empfohlen).
+- **pdf.js** für PDF-Vorschauen und die Seitenanalyse
 
 ## Entwicklung
 
@@ -57,10 +66,15 @@ npm run typecheck  # nur TypeScript prüfen
 6. Oben **„Generieren"** klicken. Die KI schreibt und platziert die Texte.
 7. Bei Bedarf alles per Maus feinjustieren und über **Export** als PDF sichern.
 
+## Backend einrichten
+
+Siehe [`SETUP-BACKEND.md`](./SETUP-BACKEND.md) für die Schritt-für-Schritt-
+Anleitung (Firebase-Projekt anlegen, Sicherheitsregeln deployen, optional den
+Server-Proxy für den Anthropic-Key einrichten). Ohne diese Schritte läuft die
+App weiterhin unverändert im lokalen Demo-Modus.
+
 ## Hinweise
 
-- Die App läuft aktuell lokal im Browser (keine Server-/Betriebskosten). Ein
-  Backend mit echten Nutzerkonten lässt sich später ergänzen.
 - Der Aufbau der Vorlagen orientiert sich an typischen Exposé-Strukturen. Eine
   exakte, pixelgenaue Übernahme fremder PDF-Layouts ist bewusst nicht
   versprochen – die Vorlagen bilden den Aufbau professionell nach.

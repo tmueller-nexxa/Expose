@@ -1,7 +1,17 @@
-// Kleiner, abhaengigkeitsfreier IndexedDB-Key-Value-Speicher.
-// Bilder/PDFs/Logo koennen gross sein -> localStorage (5 MB) reicht nicht.
+// Speicherschicht der App. Lokal: IndexedDB-Key-Value-Store (Demo-Modus ohne
+// Backend). Sobald Firebase konfiguriert ist (siehe firebase.config.ts) und
+// ein Nutzer angemeldet ist, laufen Laden/Speichern stattdessen ueber
+// Firestore + Storage (siehe cloud.ts) - fuer alle Aufrufer transparent.
 
 import type { AppData, ExposeProject, ExposeType } from "./types";
+import {
+  cloudEnabled,
+  cloudLoadAppData,
+  cloudLoadProject,
+  cloudSaveAppData,
+  cloudSaveProject,
+  resetUploadCache,
+} from "./cloud";
 
 const DB_NAME = "expose-ki";
 const DB_VERSION = 1;
@@ -63,6 +73,36 @@ async function idbSet(key: string, value: unknown): Promise<void> {
   }
 }
 
+// --- Cloud-Nutzer (wird von AppContext beim An-/Abmelden gesetzt) -------
+
+let cloudUid: string | null = null;
+
+export function setCloudUser(uid: string | null): void {
+  cloudUid = uid;
+  resetUploadCache(uid);
+}
+
+function useCloud(): string | null {
+  return cloudEnabled() && cloudUid ? cloudUid : null;
+}
+
+// Cloud-Schreibvorgaenge buendeln (z.B. beim Ziehen von Elementen wuerden
+// sonst hunderte Firestore-Schreibvorgaenge pro Sekunde ausgeloest).
+const CLOUD_DEBOUNCE_MS = 900;
+const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function debounced(key: string, fn: () => void): void {
+  const existing = debounceTimers.get(key);
+  if (existing) clearTimeout(existing);
+  debounceTimers.set(
+    key,
+    setTimeout(() => {
+      debounceTimers.delete(key);
+      fn();
+    }, CLOUD_DEBOUNCE_MS),
+  );
+}
+
 // --- Konkrete Speicher-Helfer -------------------------------------------
 
 const DATA_KEY = "app-data";
@@ -94,10 +134,7 @@ export function emptyAppData(): AppData {
   };
 }
 
-export async function loadAppData(): Promise<AppData> {
-  const stored = await idbGet<AppData>(DATA_KEY);
-  if (!stored) return emptyAppData();
-  // Robust gegen Schema-Erweiterungen.
+function mergeAppData(stored: AppData): AppData {
   const base = emptyAppData();
   return {
     ...base,
@@ -108,8 +145,25 @@ export async function loadAppData(): Promise<AppData> {
   };
 }
 
-export async function saveAppData(data: AppData): Promise<void> {
-  await idbSet(DATA_KEY, data);
+export async function loadAppData(): Promise<AppData> {
+  const uid = useCloud();
+  if (uid) {
+    const cloud = await cloudLoadAppData(uid);
+    return cloud ? mergeAppData(cloud) : emptyAppData();
+  }
+  const stored = await idbGet<AppData>(DATA_KEY);
+  return stored ? mergeAppData(stored) : emptyAppData();
+}
+
+export function saveAppData(data: AppData): void {
+  const uid = useCloud();
+  if (uid) {
+    debounced(`appdata:${uid}`, () => {
+      void cloudSaveAppData(uid, data);
+    });
+    return;
+  }
+  void idbSet(DATA_KEY, data);
 }
 
 function projectKey(type: ExposeType) {
@@ -119,11 +173,23 @@ function projectKey(type: ExposeType) {
 export async function loadProject(
   type: ExposeType,
 ): Promise<ExposeProject | undefined> {
+  const uid = useCloud();
+  if (uid) {
+    const cloud = await cloudLoadProject(uid, type);
+    return cloud ?? undefined;
+  }
   return idbGet<ExposeProject>(projectKey(type));
 }
 
-export async function saveProject(project: ExposeProject): Promise<void> {
-  await idbSet(projectKey(project.type), project);
+export function saveProject(project: ExposeProject): void {
+  const uid = useCloud();
+  if (uid) {
+    debounced(`project:${uid}:${project.type}`, () => {
+      void cloudSaveProject(uid, project);
+    });
+    return;
+  }
+  void idbSet(projectKey(project.type), project);
 }
 
 // --- Auth (einfaches Demo-Login) ----------------------------------------

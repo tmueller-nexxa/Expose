@@ -1,5 +1,11 @@
 // Anbindung an die Anthropic Claude API (Vision + Texterzeugung).
-// Laeuft direkt im Browser mit dem vom Makler hinterlegten API-Key.
+//
+// Zwei Betriebsarten:
+//  - Server-Proxy (aiProxyUrl konfiguriert): Aufruf laeuft ueber eine Cloud
+//    Function, die den Anthropic-Key serverseitig geheim haelt. Erfordert
+//    eine angemeldete Sitzung (Firebase-ID-Token).
+//  - Direkt (kein Proxy konfiguriert): Aufruf laeuft direkt aus dem Browser
+//    mit dem vom Makler im Datenbereich hinterlegten API-Key (lokaler Modus).
 
 import type {
   ApiSettings,
@@ -8,8 +14,15 @@ import type {
   StyleText,
 } from "./types";
 import { splitDataUrl } from "./util";
+import { aiProxyUrl } from "../firebase.config";
+import { currentToken } from "./cloud";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
+
+// Ist die KI grundsaetzlich aufrufbar? (Proxy konfiguriert ODER eigener Key.)
+export function aiReady(api: ApiSettings): boolean {
+  return Boolean(aiProxyUrl) || Boolean(api.apiKey);
+}
 
 export const MODEL_OPTIONS = [
   { id: "claude-sonnet-5", label: "Claude Sonnet 5 (empfohlen · schnell & guenstig)" },
@@ -47,23 +60,47 @@ async function callAnthropic(
   api: ApiSettings,
   body: Record<string, unknown>,
 ): Promise<{ content: AnthropicToolUse[] }> {
+  const useProxy = Boolean(aiProxyUrl);
   let res: Response;
+
   try {
-    res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": api.apiKey,
-        "anthropic-version": "2023-06-01",
-        // Erlaubt den direkten Aufruf aus dem Browser (CORS).
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify(body),
-    });
+    if (useProxy) {
+      const tokenPromise = currentToken();
+      const token = tokenPromise ? await tokenPromise : null;
+      if (!token) {
+        throw new AiCallError(
+          "Sie sind nicht angemeldet. Bitte neu anmelden und erneut versuchen.",
+        );
+      }
+      res = await fetch(aiProxyUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } else {
+      res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": api.apiKey,
+          "anthropic-version": "2023-06-01",
+          // Erlaubt den direkten Aufruf aus dem Browser (CORS).
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify(body),
+      });
+    }
   } catch (e) {
+    if (e instanceof AiCallError) throw e;
     // Netzwerk-/CORS-Fehler (fetch wirft) -> haeufig blockierte Umgebung.
     throw new Error(
-      "Die KI-Schnittstelle konnte nicht erreicht werden. In der Online-Vorschau/im Artifact sind externe Aufrufe blockiert – bitte die App lokal (npm run dev) oder deployt mit gültigem Anthropic-Key ausführen. Details: " +
+      (useProxy
+        ? "Die KI-Funktion (Cloud Function) konnte nicht erreicht werden. Bitte pruefen, ob sie deployt ist."
+        : "Die KI-Schnittstelle konnte nicht erreicht werden. In der Online-Vorschau/im Artifact sind externe Aufrufe blockiert – bitte die App lokal (npm run dev) oder deployt mit gültigem Anthropic-Key ausführen.") +
+        " Details: " +
         (e as Error).message,
     );
   }
@@ -77,13 +114,16 @@ async function callAnthropic(
       /* ignore */
     }
     if (res.status === 401) {
-      detail =
-        "API-Key ungültig oder nicht autorisiert (401). Bitte den Anthropic-Key im Datenbereich prüfen.";
+      detail = useProxy
+        ? "Sitzung abgelaufen. Bitte neu anmelden."
+        : "API-Key ungültig oder nicht autorisiert (401). Bitte den Anthropic-Key im Datenbereich prüfen.";
     }
     throw new Error(detail);
   }
   return res.json();
 }
+
+class AiCallError extends Error {}
 
 function buildStyleContext(styleTexts: StyleText[]): string {
   if (styleTexts.length === 0) {
@@ -144,7 +184,7 @@ export async function generateImageText(
 ): Promise<ImageTextResult | AiError> {
   const { mediaType, base64 } = splitDataUrl(imageDataUrl);
   if (!base64) return { ok: false, message: "Bild konnte nicht gelesen werden." };
-  if (!api.apiKey) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
 
   const system = `Du bist ein erfahrener Immobilien-Texter und erstellst Exposé-Texte fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(
     styleTexts,
@@ -346,7 +386,7 @@ export async function analyzeExampleLayout(
   type: ExposeType,
   onProgress?: (pagesDone: number, pagesTotal: number) => void,
 ): Promise<LayoutResult | AiError> {
-  if (!api.apiKey) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
   if (pageImages.length === 0)
     return { ok: false, message: "Keine Beispielseiten zum Analysieren gefunden." };
 
@@ -432,7 +472,7 @@ export async function analyzeBoilerplatePhotos(
 ): Promise<{ ok: true; rects: { x: number; y: number; w: number; h: number }[] } | AiError> {
   const { mediaType, base64 } = splitDataUrl(imageDataUrl);
   if (!base64) return { ok: false, message: "Seitenbild konnte nicht gelesen werden." };
-  if (!api.apiKey) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
 
   try {
     const data = await callAnthropic(api, {
@@ -487,7 +527,13 @@ export async function analyzeBoilerplatePhotos(
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.
 export async function testApiKey(api: ApiSettings): Promise<AiError | { ok: true }> {
-  if (!api.apiKey) return { ok: false, message: "Bitte zuerst einen API-Key eingeben." };
+  if (!aiReady(api))
+    return {
+      ok: false,
+      message: aiProxyUrl
+        ? "Bitte zuerst anmelden."
+        : "Bitte zuerst einen API-Key eingeben.",
+    };
   try {
     await callAnthropic(api, {
       model: api.model,

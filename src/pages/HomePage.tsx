@@ -15,6 +15,7 @@ import {
   HouseScene,
   InteriorScene,
 } from "../components/Illustrations";
+import { aiReady } from "../lib/ai";
 import "./HomePage.css";
 
 const ICONS: Record<ExposeType, JSX.Element> = {
@@ -38,13 +39,13 @@ export function HomePage() {
   const hasExamples = Object.values(data.examples).some((a) => a.length > 0);
   const hasStyle = data.styleTexts.length > 0;
   const hasLogo = !!data.logo;
-  const hasKey = !!data.api.apiKey;
+  const hasKey = aiReady(data.api);
 
   const setup = [
     { label: "Beispiel-Exposés", done: hasExamples },
     { label: "Stiltexte", done: hasStyle },
     { label: "Logo", done: hasLogo },
-    { label: "API-Key", done: hasKey },
+    { label: "KI verbunden", done: hasKey },
   ];
 
   return (
