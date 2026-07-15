@@ -70,6 +70,83 @@ export async function pdfAllPagesToImages(
   return out;
 }
 
+export interface RenderedPage {
+  image: string; // DataURL
+  text: string; // extrahierter Seitentext (exakt)
+  imageCount: number; // Anzahl Bild-Operatoren auf der Seite
+}
+
+// Rendert Seiten UND extrahiert Text + Bildanzahl (fuer Standardseiten-Erkennung).
+export async function renderPdfPages(
+  dataUrl: string,
+  maxPages = 40,
+  maxWidth = 1000,
+  onProgress?: (done: number, total: number) => void,
+): Promise<RenderedPage[]> {
+  const out: RenderedPage[] = [];
+  try {
+    const base64 = dataUrl.split(",")[1] ?? "";
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const count = Math.min(pdf.numPages, maxPages);
+    onProgress?.(0, count);
+    for (let i = 1; i <= count; i++) {
+      const page = await pdf.getPage(i);
+
+      // Text extrahieren.
+      let text = "";
+      try {
+        const tc = await page.getTextContent();
+        text = tc.items
+          .map((it) => ("str" in it ? (it as { str: string }).str : ""))
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+      } catch {
+        /* ohne Textebene -> leer */
+      }
+
+      // Bildanzahl aus der Operatorliste.
+      let imageCount = 0;
+      try {
+        const ops = await page.getOperatorList();
+        const O = pdfjsLib.OPS;
+        for (const fn of ops.fnArray) {
+          if (
+            fn === O.paintImageXObject ||
+            fn === O.paintInlineImageXObject ||
+            fn === O.paintImageMaskXObject
+          )
+            imageCount++;
+        }
+      } catch {
+        /* ignore */
+      }
+
+      // Rendern.
+      const viewport = page.getViewport({ scale: 1 });
+      const scale = Math.min(maxWidth / viewport.width, 2);
+      const scaled = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(scaled.width);
+      canvas.height = Math.ceil(scaled.height);
+      const ctx = canvas.getContext("2d");
+      let image = "";
+      if (ctx) {
+        await page.render({ canvasContext: ctx, viewport: scaled }).promise;
+        image = canvas.toDataURL("image/jpeg", 0.82);
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      out.push({ image, text, imageCount });
+      onProgress?.(i, count);
+    }
+  } catch (err) {
+    console.warn("PDF-Seiten-Verarbeitung fehlgeschlagen:", err);
+  }
+  return out;
+}
+
 export async function pdfPageCount(dataUrl: string): Promise<number> {
   try {
     const base64 = dataUrl.split(",")[1] ?? "";

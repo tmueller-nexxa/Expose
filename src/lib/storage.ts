@@ -90,6 +90,7 @@ export function emptyAppData(): AppData {
       mehrfamilienhaus: null,
       gewerbe: null,
     },
+    boilerplate: null,
   };
 }
 

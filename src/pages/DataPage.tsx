@@ -4,6 +4,7 @@ import { Dropzone } from "../components/Dropzone";
 import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
+  type BoilerplatePage,
   type ExposeType,
   type StoredFile,
   type StyleText,
@@ -14,8 +15,9 @@ import {
   MODEL_OPTIONS,
   testApiKey,
 } from "../lib/ai";
+import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
-import { pdfAllPagesToImages, pdfFirstPageToImage } from "../lib/pdf";
+import { pdfFirstPageToImage, renderPdfPages, type RenderedPage } from "../lib/pdf";
 import {
   IconCheck,
   IconData,
@@ -77,24 +79,26 @@ export function DataPage() {
     }));
   }
 
-  // Beispielseiten als Bilder gewinnen (PDF rendern / Bilder direkt).
-  async function collectPageImages(files: StoredFile[]): Promise<{
-    images: string[];
+  // Beispielseiten mit Bild + Text + Bildanzahl gewinnen (PDF / Bilder).
+  async function collectPages(files: StoredFile[]): Promise<{
+    pages: RenderedPage[];
     source: string;
   }> {
     const pdf = files.find((f) => f.mime === "application/pdf");
     if (pdf) {
-      const imgs = await pdfAllPagesToImages(
+      const pages = await renderPdfPages(
         pdf.dataUrl,
         MAX_ANALYZE_PAGES,
-        900,
+        1000,
         (done, total) => setProgress({ phase: "render", done, total }),
       );
-      return { images: imgs, source: pdf.name };
+      return { pages, source: pdf.name };
     }
     const imgFiles = files.filter((f) => f.mime.startsWith("image/"));
     return {
-      images: imgFiles.slice(0, MAX_ANALYZE_PAGES).map((f) => f.dataUrl),
+      pages: imgFiles
+        .slice(0, MAX_ANALYZE_PAGES)
+        .map((f) => ({ image: f.dataUrl, text: "", imageCount: 0 })),
       source: imgFiles[0]?.name ?? "Bilder",
     };
   }
@@ -114,40 +118,85 @@ export function DataPage() {
     setAnalyzing(true);
     setProgress({ phase: "render", done: 0, total: 0 });
     try {
-      const { images, source } = await collectPageImages(files);
-      if (images.length === 0) {
+      const { pages, source } = await collectPages(files);
+      if (pages.length === 0) {
         setAnalyzeMsg({
           ok: false,
           msg: "Aus dem Beispiel konnten keine Seiten gelesen werden. Falls es ein PDF ist: bitte die Seiten als Bilder (JPG/PNG) hochladen.",
         });
         return;
       }
-      setProgress({ phase: "analyze", done: 0, total: images.length });
-      const res = await analyzeExampleLayout(
-        data.api,
-        images,
-        activeType,
-        (done, total) => setProgress({ phase: "analyze", done, total }),
+
+      // Standardseiten (Impressum/AGB/Widerruf/Kontakt) erkennen und abtrennen.
+      const kinds = detectBoilerplate(
+        pages.map((p) => ({ text: p.text, imageCount: p.imageCount })),
       );
-      if (!res.ok) {
-        setAnalyzeMsg({ ok: false, msg: res.message });
-        return;
-      }
-      updateData((prev) => ({
-        ...prev,
-        layouts: {
-          ...prev.layouts,
-          [activeType]: {
-            pages: res.pages,
-            source,
-            pageCount: res.pages.length,
-            createdAt: Date.now(),
+      const boilerPages: BoilerplatePage[] = [];
+      const contentImages: string[] = [];
+      pages.forEach((p, i) => {
+        const kind = kinds[i];
+        if (kind) {
+          boilerPages.push({
+            id: uid("bp"),
+            kind,
+            title: BOILERPLATE_TITLES[kind],
+            image: p.image,
+            order: i,
+          });
+        } else if (p.image) {
+          contentImages.push(p.image);
+        }
+      });
+
+      // Objekt-Inhalt zur Struktur-Analyse an die KI geben.
+      let contentCount = 0;
+      if (contentImages.length > 0) {
+        setProgress({ phase: "analyze", done: 0, total: contentImages.length });
+        const res = await analyzeExampleLayout(
+          data.api,
+          contentImages,
+          activeType,
+          (done, total) => setProgress({ phase: "analyze", done, total }),
+        );
+        if (!res.ok) {
+          setAnalyzeMsg({ ok: false, msg: res.message });
+          return;
+        }
+        contentCount = res.pages.length;
+        updateData((prev) => ({
+          ...prev,
+          layouts: {
+            ...prev.layouts,
+            [activeType]: {
+              pages: res.pages,
+              source,
+              pageCount: res.pages.length,
+              createdAt: Date.now(),
+            },
           },
-        },
-      }));
+        }));
+      }
+
+      // Standardseiten global speichern (gelten fuer alle Expose-Typen).
+      if (boilerPages.length > 0) {
+        updateData((prev) => ({
+          ...prev,
+          boilerplate: { pages: boilerPages, source, createdAt: Date.now() },
+        }));
+      }
+
+      const parts: string[] = [];
+      if (contentCount > 0) parts.push(`${contentCount} Inhaltsseite(n)`);
+      if (boilerPages.length > 0) {
+        const names = [...new Set(boilerPages.map((b) => BOILERPLATE_TITLES[b.kind]))];
+        parts.push(`${boilerPages.length} Standardseite(n) 1:1 übernommen (${names.join(", ")})`);
+      }
       setAnalyzeMsg({
         ok: true,
-        msg: `Aufbau übernommen: ${res.pages.length} Seite(n) aus „${source}".`,
+        msg:
+          parts.length > 0
+            ? `Übernommen aus „${source}": ${parts.join(" · ")}.`
+            : "Es konnte keine Struktur abgeleitet werden.",
       });
     } catch (err) {
       setAnalyzeMsg({ ok: false, msg: (err as Error).message });
@@ -323,8 +372,10 @@ export function DataPage() {
               <div>
                 <div className="lp-title">Seitenstruktur übernehmen</div>
                 <div className="lp-desc">
-                  Die KI liest das Beispiel ein und baut den Aufbau (Seiten,
-                  Bild- und Textbereiche, Logo-Position) als Blanko-Vorlage nach.
+                  Die KI liest das Beispiel ein und baut den Aufbau als
+                  Blanko-Vorlage nach. Standardseiten (Impressum, AGB,
+                  Widerrufsbelehrung, Kontakt) werden dabei <b>1:1 komplett</b>{" "}
+                  übernommen und an jedes Exposé angehängt.
                 </div>
               </div>
               <button
@@ -373,6 +424,24 @@ export function DataPage() {
                 </span>
                 <button className="btn btn-danger" onClick={clearLayout}>
                   Struktur entfernen
+                </button>
+              </div>
+            )}
+
+            {data.boilerplate && data.boilerplate.pages.length > 0 && (
+              <div className="lp-current">
+                <span className="badge badge-ok">
+                  <IconCheck size={13} /> Standardseiten (alle Typen)
+                </span>
+                <span className="lp-current-text">
+                  {data.boilerplate.pages.length} Seite(n) 1:1:{" "}
+                  {[...new Set(data.boilerplate.pages.map((b) => BOILERPLATE_TITLES[b.kind]))].join(", ")}
+                </span>
+                <button
+                  className="btn btn-danger"
+                  onClick={() => updateData((p) => ({ ...p, boilerplate: null }))}
+                >
+                  Entfernen
                 </button>
               </div>
             )}

@@ -9,12 +9,39 @@ import type {
   LayoutPage,
   Page,
   PageElement,
+  StoredBoilerplate,
   StoredFile,
   StoredLayout,
   TextElement,
 } from "./types";
 import { uid } from "./util";
 import { REF_H } from "../editor/constants";
+
+// Standardseiten (Impressum/AGB/...) als exakte Seitenkopien (Bild) anhaengen.
+function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
+  if (!bp || bp.pages.length === 0) return [];
+  return [...bp.pages]
+    .sort((a, b) => a.order - b.order)
+    .map((p) => ({
+      id: uid("pg"),
+      title: p.title,
+      background: "#ffffff",
+      elements: [
+        {
+          id: uid("el"),
+          kind: "image" as const,
+          x: 0,
+          y: 0,
+          w: 1,
+          h: 1,
+          z: 1,
+          src: p.image,
+          fit: "contain" as const,
+          fromBoilerplate: true,
+        },
+      ],
+    }));
+}
 
 let zCounter = 1;
 
@@ -227,6 +254,7 @@ function wohnungPages(
 export function createProject(
   type: ExposeType,
   logo: StoredFile | null,
+  boilerplate: StoredBoilerplate | null = null,
 ): ExposeProject {
   zCounter = 1;
   const accent = ACCENT[type];
@@ -241,15 +269,25 @@ export function createProject(
     id: uid("proj"),
     type,
     title: `${title} – Exposé`,
-    pages,
+    pages: [...pages, ...boilerplatePages(boilerplate)],
     updatedAt: Date.now(),
-    builtFrom: "default",
+    builtFrom: projectStamp(null, boilerplate),
   };
 }
 
 // Eindeutiger Stempel einer gelernten Struktur (zum Abgleich mit dem Projekt).
 export function layoutStamp(layout: StoredLayout): string {
   return `layout:${layout.createdAt}`;
+}
+
+// Kombinierter Stempel aus Struktur + Standardseiten. Aendert sich einer davon,
+// erkennt der Editor, dass eine neuere Vorlage vorliegt.
+export function projectStamp(
+  layout: StoredLayout | null,
+  bp: StoredBoilerplate | null,
+): string {
+  const l = layout ? `layout:${layout.createdAt}` : "default";
+  return `${l}|bp:${bp?.createdAt ?? 0}`;
 }
 
 // --- Projekt aus der KI-gelernten Struktur (Beispiel-Exposé) -------------
@@ -369,15 +407,18 @@ export function createProjectFromLayout(
   type: ExposeType,
   layout: StoredLayout,
   logo: StoredFile | null,
+  boilerplate: StoredBoilerplate | null = null,
 ): ExposeProject {
   const accent = ACCENT[type];
-  const pages = layout.pages.map((lp) => blocksToPage(lp, logo, accent));
+  const contentPages = layout.pages.map((lp) => blocksToPage(lp, logo, accent));
+  const base =
+    contentPages.length > 0 ? contentPages : createProject(type, logo).pages;
   return {
     id: uid("proj"),
     type,
     title: `${TITLE[type]} – Exposé`,
-    pages: pages.length > 0 ? pages : createProject(type, logo).pages,
+    pages: [...base, ...boilerplatePages(boilerplate)],
     updatedAt: Date.now(),
-    builtFrom: layoutStamp(layout),
+    builtFrom: projectStamp(layout, boilerplate),
   };
 }

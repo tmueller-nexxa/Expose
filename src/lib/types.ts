@@ -94,6 +94,24 @@ export interface StoredLayout {
   createdAt: number;
 }
 
+// Standardseiten (Impressum, AGB, Widerruf, Kontakt), die 1:1 als exakte
+// Seitenkopie (Bild) uebernommen werden - gilt fuer ALLE Expose-Typen.
+export type BoilerplateKind = "impressum" | "agb" | "widerruf" | "kontakt";
+
+export interface BoilerplatePage {
+  id: string;
+  kind: BoilerplateKind;
+  title: string;
+  image: string; // DataURL der exakten Seitenkopie
+  order: number; // urspruengliche Seitenreihenfolge
+}
+
+export interface StoredBoilerplate {
+  pages: BoilerplatePage[];
+  source: string;
+  createdAt: number;
+}
+
 // Persistente Nutzerdaten (Uploads, Keys ...).
 export interface AppData {
   examples: Record<ExposeType, StoredFile[]>;
@@ -104,6 +122,8 @@ export interface AppData {
   api: ApiSettings;
   // Pro Typ: aus den Beispielen uebernommene Seitenstruktur (oder null).
   layouts: Record<ExposeType, StoredLayout | null>;
+  // Global: 1:1 uebernommene Standardseiten (fuer alle Typen).
+  boilerplate: StoredBoilerplate | null;
 }
 
 // --- Editor / Dokument-Modell -------------------------------------------
@@ -126,6 +146,9 @@ export interface ImageElement extends BaseElement {
   kind: "image";
   src: string; // DataURL
   fit: "cover" | "contain";
+  // Exakte Seitenkopie einer Standardseite (Impressum/AGB/...): nicht vom
+  // Nutzer platziert und von der Textgenerierung ausgenommen.
+  fromBoilerplate?: boolean;
   // Von der KI erkannter Bildinhalt (nach Analyse gesetzt).
   analysis?: {
     important: string;

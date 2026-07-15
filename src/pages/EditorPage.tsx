@@ -12,7 +12,7 @@ import {
 import {
   createProject,
   createProjectFromLayout,
-  layoutStamp,
+  projectStamp,
 } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
@@ -29,10 +29,15 @@ import {
 } from "../components/Icons";
 import "./EditorPage.css";
 
-// Hat der Nutzer bereits eigene Bilder auf den Seiten platziert?
+// Hat der Nutzer bereits eigene Bilder platziert? (Standardseiten zaehlen nicht.)
 function hasPlacedImages(project: ExposeProject): boolean {
   return project.pages.some((pg) =>
-    pg.elements.some((e) => e.kind === "image" && (e as ImageElement).src),
+    pg.elements.some(
+      (e) =>
+        e.kind === "image" &&
+        (e as ImageElement).src &&
+        !(e as ImageElement).fromBoilerplate,
+    ),
   );
 }
 
@@ -64,19 +69,21 @@ export function EditorPage() {
     (async () => {
       const existing = await loadProject(exType);
       const layout = data.layouts[exType];
+      const bp = data.boilerplate;
       const fresh = layout
-        ? createProjectFromLayout(exType, layout, data.logo)
-        : createProject(exType, data.logo);
+        ? createProjectFromLayout(exType, layout, data.logo, bp)
+        : createProject(exType, data.logo, bp);
+      const stamp = projectStamp(layout, bp);
 
       let proj = existing ?? fresh;
       let saveIt = !existing;
       let updateHint = false;
 
-      // Neuere gelernte Struktur vorhanden als das gespeicherte Projekt?
-      if (existing && layout && existing.builtFrom !== layoutStamp(layout)) {
+      // Neuere gelernte Struktur / Standardseiten als das gespeicherte Projekt?
+      if (existing && existing.builtFrom !== stamp && (layout || bp)) {
         if (!hasPlacedImages(existing)) {
-          // Noch keine Bilder platziert -> neue Struktur direkt uebernehmen.
-          proj = createProjectFromLayout(exType, layout, data.logo);
+          // Noch keine Bilder platziert -> neue Vorlage direkt uebernehmen.
+          proj = fresh;
           saveIt = true;
         } else {
           // Es steckt schon Arbeit drin -> nur Hinweis anbieten.
@@ -215,7 +222,11 @@ export function EditorPage() {
     const jobs: { pageIdx: number; img: ImageElement }[] = [];
     cur.pages.forEach((pg, idx) => {
       for (const e of pg.elements) {
-        if (e.kind === "image" && (e as ImageElement).src) {
+        if (
+          e.kind === "image" &&
+          (e as ImageElement).src &&
+          !(e as ImageElement).fromBoilerplate
+        ) {
           jobs.push({ pageIdx: idx, img: e as ImageElement });
         }
       }
@@ -346,8 +357,8 @@ export function EditorPage() {
       : "Aktuellen Aufbau verwerfen und die Standardvorlage wiederherstellen? Bereits platzierte Bilder und Texte gehen dabei verloren.";
     if (!window.confirm(msg)) return;
     const proj = layout
-      ? createProjectFromLayout(exType, layout, data.logo)
-      : createProject(exType, data.logo);
+      ? createProjectFromLayout(exType, layout, data.logo, data.boilerplate)
+      : createProject(exType, data.logo, data.boilerplate);
     commit(proj);
     setPageIndex(0);
     setSelectedId(null);
