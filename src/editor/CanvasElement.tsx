@@ -86,6 +86,7 @@ export function CanvasElement(props: Props) {
 
   function onHandleDown(e: React.PointerEvent, corner: Corner) {
     onSelect(el.id);
+    if (el.locked) return;
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
     startPointerDrag(e, (dx, dy) => {
       const fx = dx / pageW;
@@ -107,7 +108,7 @@ export function CanvasElement(props: Props) {
     });
   }
 
-  const handles = selected && editable && !editing && (
+  const handles = selected && editable && !editing && !el.locked && (
     <>
       {(["nw", "ne", "sw", "se"] as Corner[]).map((c) => (
         <div

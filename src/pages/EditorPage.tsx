@@ -149,7 +149,9 @@ export function EditorPage() {
       mutatePages((pages) =>
         pages.map((pg) => ({
           ...pg,
-          elements: pg.elements.filter((e) => e.id !== elId),
+          // Gesperrte Elemente (z.B. der 1:1-Hintergrund der Standardseiten)
+          // duerfen nie geloescht werden.
+          elements: pg.elements.filter((e) => e.id !== elId || e.locked),
         })),
       );
       setSelectedId(null);
@@ -498,7 +500,7 @@ export function EditorPage() {
             Seite {pageIndex + 1} von {project.pages.length} · {page.title}
           </div>
 
-          {selected && (
+          {selected && !selected.locked && (
             <Inspector
               element={selected}
               onPatch={(patch) => patchElement(selected.id, patch)}

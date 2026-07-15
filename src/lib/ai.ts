@@ -522,28 +522,28 @@ export async function analyzeBoilerplatePhotos(
         if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
       }
     const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
+    // Kleiner Sicherheitsrand: schaetzt die KI die Fotogrenzen minimal zu
+    // knapp, bliebe sonst ein Rand des Originalfotos hinter dem Platzhalter
+    // sichtbar. Lieber etwas grosszuegiger als das Original durchscheinen
+    // zu lassen.
+    const MARGIN = 0.025;
     const rects = raw
       .map((r) => {
-        const x = clamp01(Number(r.x) * scale);
-        const y = clamp01(Number(r.y) * scale);
+        const x = clamp01(Number(r.x) * scale - MARGIN);
+        const y = clamp01(Number(r.y) * scale - MARGIN);
         // w/h zusaetzlich so begrenzen, dass das Rechteck nie ueber den
         // rechten/unteren Seitenrand hinausragt (verhindert "spilling over").
-        const w = clamp01(Math.min(Number(r.w) * scale, 1 - x), 0.03);
-        const h = clamp01(Math.min(Number(r.h) * scale, 1 - y), 0.03);
+        const w = clamp01(Math.min(Number(r.w) * scale + MARGIN * 2, 1 - x), 0.03);
+        const h = clamp01(Math.min(Number(r.h) * scale + MARGIN * 2, 1 - y), 0.03);
         return { x, y, w, h };
       })
       // Nur nennenswert grosse, aber plausible Fotos: kleine Treffer sind
-      // wohl Logos/Icons, sehr grossflaechige (fast volle Seitenhoehe/-breite
-      // UND deutliche Ausdehnung) sind typischerweise faelschlich erkannte
-      // Hintergrund-/Dekor-Panels, keine echten Fotos.
-      .filter(
-        (r) =>
-          r.w >= 0.12 &&
-          r.h >= 0.08 &&
-          !(r.h > 0.85 && r.w > 0.3) &&
-          !(r.w > 0.85 && r.h > 0.3) &&
-          r.w * r.h <= 0.55,
-      );
+      // wohl Logos/Icons. Breite Banner-Fotos (volle Seitenbreite, moderate
+      // Hoehe) sind normal und sollen erhalten bleiben - NUR ein Rechteck mit
+      // fast voller SEITENHOEHE (span von oben bis unten) und nennenswerter
+      // Breite ist typischerweise ein faelschlich erkanntes Hintergrund-/
+      // Dekor-Panel, kein echtes Foto (genau das beobachtete Fehlermuster).
+      .filter((r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.85 && r.w > 0.3));
     return { ok: true, rects };
   } catch (err) {
     return { ok: false, message: (err as Error).message };
