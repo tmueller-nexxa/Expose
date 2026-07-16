@@ -191,6 +191,7 @@ export function DataPage() {
             image,
             order: cp.order,
             photoSlots: regions.photos,
+            textSlots: regions.texts,
           });
           setProgress({ phase: "erase", done: i + 1, total: contentPages.length });
         }

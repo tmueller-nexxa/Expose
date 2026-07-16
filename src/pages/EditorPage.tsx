@@ -28,6 +28,7 @@ import {
   IconDownload,
   IconImage,
   IconSparkle,
+  IconText,
   IconTrash,
 } from "../components/Icons";
 import "./EditorPage.css";
@@ -359,6 +360,38 @@ export function EditorPage() {
     flash("Platzhalter hinzugefügt – per Maus über das Foto ziehen und in der Größe anpassen.");
   }
 
+  // Fuegt der aktuellen Seite manuell ein leeres, frei editierbares Textfeld
+  // hinzu - nuetzlich, wenn an einer Stelle noch Originaltext sichtbar ist,
+  // der automatisch nicht erkannt wurde.
+  function addTextPlaceholder() {
+    const w = 0.5;
+    const h = 0.08;
+    const newEl: TextElement = {
+      id: uid("el"),
+      kind: "text",
+      x: (1 - w) / 2,
+      y: (1 - h) / 2,
+      w,
+      h,
+      z: maxZ() + 1,
+      text: "",
+      fontSize: 18,
+      align: "left",
+      color: "#1f2d3d",
+      background: "rgba(0,0,0,0)",
+      fontWeight: 400,
+    };
+    const pageId = projectRef.current?.pages[pageIndex]?.id;
+    mutatePages((pages) =>
+      pages.map((pg) =>
+        pg.id === pageId ? { ...pg, elements: [...pg.elements, newEl] } : pg,
+      ),
+    );
+    setSelectedId(newEl.id);
+    setEditingId(newEl.id);
+    flash("Textfeld hinzugefügt – Text eingeben, per Maus verschieben und in der Größe anpassen.");
+  }
+
   // --- Generieren --------------------------------------------------------
   async function handleGenerate() {
     const cur = projectRef.current;
@@ -569,6 +602,14 @@ export function EditorPage() {
           title="Leeren Foto-Platzhalter auf dieser Seite hinzufügen (z.B. über ein verbliebenes Foto ziehen)"
         >
           <IconImage size={18} /> Platzhalter
+        </button>
+        <button
+          className="btn btn-ghost"
+          onClick={addTextPlaceholder}
+          disabled={!!progress}
+          title="Leeres Textfeld auf dieser Seite hinzufügen (z.B. für einen entfernten Titel/Text)"
+        >
+          <IconText size={18} /> Textfeld
         </button>
         <button
           className="btn btn-ghost"

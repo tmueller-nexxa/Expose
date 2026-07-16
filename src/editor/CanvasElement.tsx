@@ -176,13 +176,14 @@ export function CanvasElement(props: Props) {
 
   // --- Text / Heading ----------------------------------------------------
   const t = el as TextElement;
+  const isEmpty = !t.text && !editing;
   const pad = t.text || editing ? Math.max(3, t.fontSize * scale * 0.35) : 0;
   const justify =
     t.align === "center" ? "center" : t.align === "right" ? "flex-end" : "flex-start";
 
   return (
     <div
-      className={`el el-text ${selected ? "selected" : ""}`}
+      className={`el el-text ${isEmpty ? "empty" : ""} ${selected ? "selected" : ""}`}
       style={{
         ...style,
         background: t.background,
@@ -210,6 +211,8 @@ export function CanvasElement(props: Props) {
           onBlur={() => onCommitText(el.id, editRef.current?.textContent ?? "")}
           onPointerDown={(e) => e.stopPropagation()}
         />
+      ) : isEmpty ? (
+        editable && <div className="txt-ph">Text eingeben …</div>
       ) : (
         <div
           className="txt"

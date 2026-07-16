@@ -185,6 +185,18 @@
   overflow-wrap: break-word;
   overflow: hidden;
 }
+.el-text.empty {
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+}
+.el-text .txt-ph {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-align: center;
+  pointer-events: none;
+}
 
 .el.dragging {
   cursor: grabbing;

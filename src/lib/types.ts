@@ -91,6 +91,9 @@ export interface CapturedPage {
   // Fotobereiche, die aus dem Bild entfernt wurden und durch Platzhalter
   // ersetzt werden (Anteile 0..1).
   photoSlots?: Rect[];
+  // Textbereiche, die aus dem Bild entfernt wurden (nur Inhaltsseiten) und
+  // durch leere, frei editierbare Textfelder ersetzt werden (Anteile 0..1).
+  textSlots?: Rect[];
 }
 
 // Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...):

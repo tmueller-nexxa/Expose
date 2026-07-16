@@ -17,7 +17,8 @@ import type {
   StoredFile,
   StoredLayout,
 } from "./types";
-import { uid } from "./util";
+import { clamp, uid } from "./util";
+import { REF_H } from "../editor/constants";
 
 // Baut aus einer 1:1 uebernommenen Seite (Inhalts- oder Standardseite) ein
 // Page-Objekt: gesperrter Vollbild-Hintergrund + Foto-Platzhalter an den
@@ -53,6 +54,27 @@ function capturedPageToPage(
       z: z++,
       src: "",
       fit: "cover",
+    });
+  }
+  // Entfernte Textstellen (nur Inhaltsseiten) als leere, frei editierbare
+  // Textfelder wieder einsetzen - Position/Größe 1:1 wie im Original,
+  // Inhalt frei (neuer Objekttext statt des entfernten Originaltexts).
+  for (const slot of p.textSlots ?? []) {
+    const fontSize = Math.round(clamp(slot.h * REF_H * 0.5, 11, 42));
+    elements.push({
+      id: uid("el"),
+      kind: "text",
+      x: slot.x,
+      y: slot.y,
+      w: slot.w,
+      h: slot.h,
+      z: z++,
+      text: "",
+      fontSize,
+      align: "left",
+      color: "#1f2d3d",
+      background: "rgba(0,0,0,0)",
+      fontWeight: 400,
     });
   }
   return {
