@@ -59,6 +59,7 @@ function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
         title: p.title,
         background: "#ffffff",
         elements,
+        boilerplateId: p.id,
       };
     });
 }

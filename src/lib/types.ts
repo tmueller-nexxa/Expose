@@ -187,6 +187,10 @@ export interface Page {
   title: string;
   background: string;
   elements: PageElement[];
+  // Bei Standardseiten: Referenz auf die urspruengliche BoilerplatePage.id
+  // in AppData.boilerplate, damit Aenderungen (z.B. Foto entfernen) auch in
+  // der globalen Vorlage nachgezogen werden koennen.
+  boilerplateId?: string;
 }
 
 export interface ExposeProject {

@@ -16,6 +16,7 @@ import {
 } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
+import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
 import { fitFontSize } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
@@ -61,7 +62,7 @@ function hasPlacedImages(project: ExposeProject): boolean {
 export function EditorPage() {
   const { type } = useParams<{ type: string }>();
   const navigate = useNavigate();
-  const { data } = useApp();
+  const { data, updateData } = useApp();
   const exType = (type ?? "einfamilienhaus") as ExposeType;
   const typeMeta = EXPOSE_TYPES.find((t) => t.id === exType);
 
@@ -247,6 +248,62 @@ export function EditorPage() {
   function flash(msg: string, err = false) {
     setToast({ msg, err });
     window.setTimeout(() => setToast(null), err ? 5000 : 3500);
+  }
+
+  // Entfernt (uebermalt) den Bereich unter einem Platzhalter direkt aus dem
+  // gesperrten 1:1-Hintergrund der Seite - das Foto ist danach wirklich weg,
+  // nicht nur mit dem Platzhalter ueberdeckt.
+  async function erasePhotoUnderSelected() {
+    const cur = projectRef.current;
+    if (!cur) return;
+    const pg = cur.pages[pageIndex];
+    const target = pg?.elements.find((e) => e.id === selectedId);
+    if (!target || target.kind !== "image") return;
+    const bg = pg.elements.find(
+      (e) => e.kind === "image" && e.locked && (e as ImageElement).fromBoilerplate,
+    ) as ImageElement | undefined;
+    if (!bg) return;
+
+    const rect = { x: target.x, y: target.y, w: target.w, h: target.h };
+    const erased = await eraseRegionsFromImage(bg.src, [rect]);
+    mutatePages((pages) =>
+      pages.map((p) =>
+        p.id === pg.id
+          ? {
+              ...p,
+              elements: p.elements.map((e) =>
+                e.id === bg.id ? ({ ...e, src: erased } as ImageElement) : e,
+              ),
+            }
+          : p,
+      ),
+    );
+
+    // Auch die GLOBALE Vorlage aktualisieren, sonst haette "Neu aufbauen"
+    // oder ein neu erstelltes Exposé eines anderen Typs wieder das
+    // Original-Foto (die globale Vorlage ist die Quelle beim Neuaufbau).
+    if (pg.boilerplateId) {
+      updateData((prev) => {
+        if (!prev.boilerplate) return prev;
+        return {
+          ...prev,
+          boilerplate: {
+            ...prev.boilerplate,
+            pages: prev.boilerplate.pages.map((bp) =>
+              bp.id === pg.boilerplateId
+                ? {
+                    ...bp,
+                    image: erased,
+                    photoSlots: [...(bp.photoSlots ?? []), rect],
+                  }
+                : bp,
+            ),
+          },
+        };
+      });
+    }
+
+    flash("Foto aus dem Hintergrund entfernt.");
   }
 
   // Fuegt der aktuellen Seite manuell einen leeren Foto-Platzhalter hinzu -
@@ -583,6 +640,17 @@ export function EditorPage() {
                 setEditingId(selected.id);
               }}
               onFront={() => patchElement(selected.id, { z: maxZ() + 1 })}
+              onErasePhoto={
+                selected.kind === "image" &&
+                page.elements.some(
+                  (e) =>
+                    e.kind === "image" &&
+                    e.locked &&
+                    (e as ImageElement).fromBoilerplate,
+                )
+                  ? erasePhotoUnderSelected
+                  : undefined
+              }
             />
           )}
         </div>
@@ -647,12 +715,14 @@ function Inspector({
   onDelete,
   onEdit,
   onFront,
+  onErasePhoto,
 }: {
   element: PageElement;
   onPatch: (patch: Partial<PageElement>) => void;
   onDelete: () => void;
   onEdit: () => void;
   onFront: () => void;
+  onErasePhoto?: () => void;
 }) {
   const isText = element.kind === "text" || element.kind === "heading";
   const t = element as TextElement;
@@ -739,6 +809,19 @@ function Inspector({
             ▭
           </button>
         </div>
+      )}
+
+      {onErasePhoto && (
+        <>
+          <div className="sep" />
+          <button
+            className="btn btn-ghost"
+            onClick={onErasePhoto}
+            title="Das Originalfoto an dieser Stelle aus dem Hintergrund entfernen (nicht nur überdecken)"
+          >
+            Foto entfernen
+          </button>
+        </>
       )}
 
       <div className="sep" />

@@ -19,6 +19,7 @@ import {
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
 import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
+import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
 import { pdfFirstPageToImage, renderPdfPages, type RenderedPage } from "../lib/pdf";
 import {
@@ -187,6 +188,9 @@ export function DataPage() {
 
       // Fotos auf Impressum/AGB/Widerruf durch Platzhalter ersetzen.
       // (Kontakt behaelt sein Foto = dein Portrait.)
+      // Wichtig: die Fotos werden nicht nur mit einem Platzhalter UEBERDECKT,
+      // sondern aus dem Hintergrundbild selbst entfernt (uebermalt) - danach
+      // ist an der Stelle wirklich kein Foto mehr vorhanden.
       const needPhotos = boilerPages.filter((b) => b.kind !== "kontakt");
       if (needPhotos.length > 0) {
         setProgress({ phase: "boiler", done: 0, total: needPhotos.length });
@@ -195,7 +199,10 @@ export function DataPage() {
           const src = pages[b.order]?.image;
           if (src) {
             const r = await analyzeBoilerplatePhotos(data.api, src);
-            if (r.ok) b.photoSlots = r.rects;
+            if (r.ok && r.rects.length > 0) {
+              b.photoSlots = r.rects;
+              b.image = await eraseRegionsFromImage(src, r.rects);
+            }
           }
           setProgress({ phase: "boiler", done: i + 1, total: needPhotos.length });
         }
