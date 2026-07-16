@@ -215,7 +215,15 @@ export function EditorPage() {
       return;
     }
     const src = await fileToDataUrl(file);
-    patchElement(elId, { src, fit: "cover" } as Partial<ImageElement>);
+    // Zoom/Position auf das neue Foto zuruecksetzen - eine fuer das alte
+    // Foto passende Verschiebung/Zoomstufe passt nicht zum neuen Bild.
+    patchElement(elId, {
+      src,
+      fit: "cover",
+      imgScale: 1,
+      imgX: 0,
+      imgY: 0,
+    } as Partial<ImageElement>);
     setSelectedId(elId);
   }
 
@@ -866,6 +874,43 @@ function Inspector({
             ▭
           </button>
         </div>
+      )}
+
+      {element.kind === "image" && img.src && (
+        <>
+          <div className="sep" />
+          <div className="grp">
+            <span className="lbl">Zoom</span>
+            <button
+              className="tool"
+              onClick={() => {
+                const next = Math.max(1, (img.imgScale ?? 1) - 0.15);
+                const bound = Math.max(0, (next - 1) / 2);
+                onPatch({
+                  imgScale: next,
+                  imgX: Math.min(Math.max(img.imgX ?? 0, -bound), bound),
+                  imgY: Math.min(Math.max(img.imgY ?? 0, -bound), bound),
+                } as Partial<ImageElement>);
+              }}
+            >
+              −
+            </button>
+            <span className="lbl">{Math.round((img.imgScale ?? 1) * 100)}%</span>
+            <button
+              className="tool"
+              onClick={() => {
+                const next = Math.min(4, (img.imgScale ?? 1) + 0.15);
+                onPatch({ imgScale: next } as Partial<ImageElement>);
+              }}
+            >
+              +
+            </button>
+          </div>
+          <div className="sep" />
+          <button className="btn btn-ghost" onClick={onEdit}>
+            Bild anpassen
+          </button>
+        </>
       )}
 
       {onErasePhoto && (

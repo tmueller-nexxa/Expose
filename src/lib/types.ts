@@ -157,6 +157,14 @@ export interface ImageElement extends BaseElement {
   kind: "image";
   src: string; // DataURL
   fit: "cover" | "contain";
+  // Position/Zoom des Fotos INNERHALB des Rahmens (unabhaengig von dessen
+  // Groesse/Position auf der Seite) - per Doppelklick "Bild anpassen".
+  // imgScale: 1 = Originalausschnitt (object-fit: cover), >1 = hineingezoomt.
+  // imgX/imgY: Verschiebung als Anteil der Rahmengroesse, Bereich
+  // +/-(imgScale-1)/2 (so bleibt der Rahmen immer vollstaendig gefuellt).
+  imgScale?: number;
+  imgX?: number;
+  imgY?: number;
   // Exakte Seitenkopie einer Standardseite (Impressum/AGB/...): nicht vom
   // Nutzer platziert und von der Textgenerierung ausgenommen.
   fromBoilerplate?: boolean;

@@ -51,6 +51,14 @@ export function CanvasElement(props: Props) {
   const editRef = useRef<HTMLDivElement>(null);
   const isText = el.kind === "text" || el.kind === "heading";
   const editing = editable && isText && editingId === el.id;
+  // "Bild anpassen"-Modus: Foto per Doppelklick unabhaengig vom Rahmen
+  // verschieben/zoomen (Rahmen selbst bleibt dabei unveraendert).
+  const imgEditing =
+    editable &&
+    el.kind === "image" &&
+    !el.locked &&
+    Boolean((el as ImageElement).src) &&
+    editingId === el.id;
 
   useEffect(() => {
     if (editing && editRef.current) {
@@ -77,6 +85,10 @@ export function CanvasElement(props: Props) {
   function onBodyDown(e: React.PointerEvent) {
     if (!editable) return;
     onSelect(el.id);
+    if (imgEditing) {
+      onImagePanDown(e);
+      return;
+    }
     if (editing || el.locked) return;
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
     startPointerDrag(e, (dx, dy) => {
@@ -85,6 +97,37 @@ export function CanvasElement(props: Props) {
         y: clamp(s.y + dy / pageH, 0, 1 - s.h),
       });
     });
+  }
+
+  // Verschiebt das Foto INNERHALB des Rahmens (Position/Zoom des Bildes),
+  // nicht den Rahmen selbst. Verschiebung ist auf +/-(scale-1)/2 begrenzt,
+  // damit der Rahmen immer vollstaendig gefuellt bleibt (kein leerer Rand).
+  function onImagePanDown(e: React.PointerEvent) {
+    const img = el as ImageElement;
+    const s = img.imgScale ?? 1;
+    const bound = Math.max(0, (s - 1) / 2);
+    const start = { x: img.imgX ?? 0, y: img.imgY ?? 0 };
+    startPointerDrag(e, (dx, dy) => {
+      onChange(el.id, {
+        imgX: clamp(start.x + dx / (el.w * pageW), -bound, bound),
+        imgY: clamp(start.y + dy / (el.h * pageH), -bound, bound),
+      } as Partial<ImageElement>);
+    });
+  }
+
+  function onImageWheel(e: React.WheelEvent) {
+    if (!imgEditing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const img = el as ImageElement;
+    const cur = img.imgScale ?? 1;
+    const next = clamp(cur - e.deltaY * 0.0015, 1, 4);
+    const bound = Math.max(0, (next - 1) / 2);
+    onChange(el.id, {
+      imgScale: next,
+      imgX: clamp(img.imgX ?? 0, -bound, bound),
+      imgY: clamp(img.imgY ?? 0, -bound, bound),
+    } as Partial<ImageElement>);
   }
 
   function onHandleDown(e: React.PointerEvent, corner: HandlePos) {
@@ -111,7 +154,7 @@ export function CanvasElement(props: Props) {
     });
   }
 
-  const handles = selected && editable && !editing && !el.locked && (
+  const handles = selected && editable && !editing && !imgEditing && !el.locked && (
     <>
       {HANDLES.map((c) => (
         <div
@@ -144,18 +187,27 @@ export function CanvasElement(props: Props) {
   // --- Image / Logo ------------------------------------------------------
   if (el.kind === "image" || el.kind === "logo") {
     const isLogo = el.kind === "logo";
+    const img = el as ImageElement;
     const src = (el as ImageElement | LogoElement).src;
     const empty = !src;
+    const imgScale = img.imgScale ?? 1;
+    const imgX = img.imgX ?? 0;
+    const imgY = img.imgY ?? 0;
     return (
       <div
         className={`el el-image ${empty ? "empty" : ""} ${
           dropOver ? "drop-over" : ""
-        } ${selected ? "selected" : ""}`}
+        } ${selected ? "selected" : ""} ${imgEditing ? "img-editing" : ""}`}
         style={{
           ...style,
           background: isLogo ? "transparent" : undefined,
+          cursor: imgEditing ? "grab" : undefined,
         }}
         onPointerDown={onBodyDown}
+        onWheel={onImageWheel}
+        onDoubleClick={() =>
+          editable && !isLogo && !empty && !el.locked && onStartEdit(el.id)
+        }
         onDragOver={(e) => {
           if (!editable) return;
           e.preventDefault();
@@ -183,10 +235,18 @@ export function CanvasElement(props: Props) {
               src={src}
               alt=""
               draggable={false}
-              style={{ objectFit: isLogo ? "contain" : (el as ImageElement).fit }}
+              style={{
+                objectFit: isLogo ? "contain" : img.fit,
+                transform: isLogo
+                  ? undefined
+                  : `translate(${imgX * 100}%, ${imgY * 100}%) scale(${imgScale})`,
+              }}
             />
           )}
           {analyzing && <div className="analyzing">KI analysiert Bild …</div>}
+          {imgEditing && (
+            <div className="img-edit-hint">Ziehen zum Verschieben · Scrollen zum Zoomen</div>
+          )}
         </div>
         {handles}
       </div>

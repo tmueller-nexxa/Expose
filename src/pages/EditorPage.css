@@ -159,6 +159,26 @@
   height: 100%;
   display: block;
 }
+.el-image.img-editing {
+  outline: 2px dashed var(--brand);
+  outline-offset: 1px;
+}
+.el-image.img-editing:active {
+  cursor: grabbing;
+}
+.img-edit-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 5px 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
 .el-image.empty {
   border: 2px dashed #cbd5e1;
   background: #f8fafc;
