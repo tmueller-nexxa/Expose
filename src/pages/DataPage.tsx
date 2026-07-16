@@ -166,9 +166,11 @@ export function DataPage() {
       });
 
       // Inhaltsseiten: KEIN Bild uebernehmen - stattdessen den grafischen
-      // Aufbau (Formen/Banner in Originalfarbe, Text-Positionen/-Stile ohne
-      // Originalinhalt, Fotoflaechen leer) als editierbare Elemente
-      // nachbauen.
+      // Aufbau (Formen/Banner in Originalfarbe, Text-Positionen/-Stile,
+      // Fotoflaechen leer) als editierbare Elemente nachbauen. Text auf
+      // einer farbigen Formflaeche (Banner/Kachel) ist meist ein statisches
+      // Rubriken-/Abschnittslabel und wird 1:1 uebernommen; freier Fliesstext
+      // bleibt leer, da er objektspezifisch ist.
       const capturedContent: DesignPage[] = [];
       if (contentPages.length > 0) {
         setProgress({ phase: "analyze", done: 0, total: contentPages.length });
@@ -184,6 +186,7 @@ export function DataPage() {
         for (let i = 0; i < contentPages.length; i++) {
           const cp = contentPages[i];
           const design = res.pages[i] ?? { title: `Seite ${i + 1}`, background: "#ffffff", blocks: [] };
+          const shapes = design.blocks.filter((b) => b.type === "shape");
           let z = 1;
           const elements: PageElement[] = design.blocks.map((b) => {
             if (b.type === "shape") {
@@ -224,6 +227,14 @@ export function DataPage() {
                 src: "",
               };
             }
+            // Sicherheitsnetz: der Originaltext wird nur uebernommen, wenn
+            // der Textblock auch geometrisch auf einer Formflaeche liegt -
+            // unabhaengig davon, was die KI im "text"-Feld geliefert hat.
+            const cx = b.x + b.w / 2;
+            const cy = b.y + b.h / 2;
+            const onShape = shapes.some(
+              (s) => cx >= s.x && cx <= s.x + s.w && cy >= s.y && cy <= s.y + s.h,
+            );
             return {
               id: uid("el"),
               kind: b.type === "heading" ? "heading" : "text",
@@ -232,7 +243,7 @@ export function DataPage() {
               w: b.w,
               h: b.h,
               z: z++,
-              text: "",
+              text: onShape ? (b.text ?? "") : "",
               fontSize: b.fontSize ?? (b.type === "heading" ? 26 : 15),
               align: b.align ?? "left",
               color: b.color ?? "#1f2d3d",
@@ -484,10 +495,12 @@ export function DataPage() {
                 <div className="lp-desc">
                   Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, …)
                   werden als <b>editierbare Grafik 1:1 nachgebaut</b> – Formen/
-                  Banner in Originalfarbe, Text in Originalgröße/-farbe/
-                  -ausrichtung, Bildflächen als leere Platzhalter (kein
-                  Originalfoto wird übernommen). Standardseiten (Impressum,
-                  AGB, Widerruf, Kontakt) bleiben <b>1:1 als Bildkopie</b> mit
+                  Banner in Originalfarbe, Bildflächen als leere Platzhalter
+                  (kein Originalfoto wird übernommen). Text auf farbigen
+                  Bannern/Kacheln (z. B. Rubriken-Label) wird <b>1:1
+                  übernommen</b>, freier Fließtext bleibt leer und wird pro
+                  Objekt neu eingegeben. Standardseiten (Impressum, AGB,
+                  Widerruf, Kontakt) bleiben <b>1:1 als Bildkopie</b> mit
                   vollständigem, wortgetreuem Text – nur Fotos werden durch
                   Platzhalter ersetzt (Kontakt behält sein Foto). Gilt für
                   alle Exposé-Typen.

@@ -435,6 +435,11 @@ export interface DesignBlock {
   fontWeight?: number;
   align?: "left" | "center" | "right";
   radius?: number;
+  // Nur gesetzt, wenn der Text auf einer farbigen Formflaeche (Banner/
+  // Kachel) liegt - dann 1:1 wortgetreu wie im Original (statisches
+  // Rubriken-/Abschnittslabel, keine Objektdaten). Sonst leer, da der Inhalt
+  // objektspezifisch ist und frei eingegeben wird.
+  text?: string;
 }
 
 export interface DesignPageResult {
@@ -497,6 +502,11 @@ const DESIGN_TOOL = {
                     type: "number",
                     description: "Nur shape: Eckenradius in px bei 794px Referenzbreite (0 fuer eckig).",
                   },
+                  text: {
+                    type: "string",
+                    description:
+                      "NUR bei heading/text, wenn der Text auf einer farbigen Formflaeche (shape/Banner/Kachel) liegt: der exakte Originaltext 1:1 (Buchstabe fuer Buchstabe, z.B. ein Rubriken-/Abschnittslabel wie 'EINFAMILIENHAUS' oder 'OBJEKTBESCHREIBUNG'). Liegt der Text NICHT auf einer Formflaeche (freier Fliesstext/Absatz ueber Hintergrund oder Foto), Feld weglassen - dieser Inhalt ist objektspezifisch und wird spaeter frei eingegeben.",
+                  },
                 },
                 required: ["type", "x", "y", "w", "h"],
               },
@@ -527,7 +537,8 @@ async function analyzeDesignChunk(
     "Du bist Experte fuer die pixelgenaue Grafik-Analyse von Immobilien-Exposé-Seiten. " +
     "Zerlege jede gezeigte Seite VOLLSTAENDIG in ihre grafischen Elemente, damit sie als Vektor-Grafik 1:1 nachgebaut werden kann - OHNE ein Foto der Seite einzubetten. " +
     "Erfasse JEDES Dekorelement (farbige Banner, Balken, Kacheln, Trennlinien, Kopf-/Fusszeilen-Flaechen) als eigenen \"shape\"-Block mit der TATSAECHLICHEN, aus dem Bild abgelesenen Farbe (Hex-Code) und Position/Groesse. " +
-    "Erfasse JEDE Ueberschrift/jedes Label als \"heading\" oder \"text\"-Block mit der TATSAECHLICHEN Position/Groesse/Schriftfarbe/Schriftstaerke aus dem Original - aber OHNE den Original-Textinhalt zu uebernehmen (der Inhalt ist objektspezifisch und wird spaeter frei eingegeben). " +
+    "Erfasse JEDE Ueberschrift/jedes Label als \"heading\" oder \"text\"-Block mit der TATSAECHLICHEN Position/Groesse/Schriftfarbe/Schriftstaerke aus dem Original. " +
+    "Textinhalt (Feld \"text\"): NUR uebernehmen, wenn der Text auf einer farbigen Formflaeche (shape/Banner/Kachel) liegt - das sind meist statische Rubriken-/Abschnittslabels (z.B. Objekttyp, Seitentitel) und werden 1:1 wortgetreu transkribiert. Liegt der Text dagegen frei ueber Hintergrund/Foto (Fliesstext, Absaetze, Adress-/Objektdaten), das Feld \"text\" WEGLASSEN - dieser Inhalt ist objektspezifisch und wird spaeter frei eingegeben. " +
     "Erfasse jede Fotoflaeche als \"image\"-Block (nur Position/Groesse, bleibt leer - KEIN Foto wird uebernommen). " +
     "Erfasse eine erkennbare Logo-Position als \"logo\"-Block. " +
     "Farben IMMER als Hex-Code exakt aus dem Bild ablesen, nicht schaetzen oder durch generische Farben ersetzen. " +
@@ -547,7 +558,7 @@ async function analyzeDesignChunk(
           ...imageBlocks,
           {
             type: "text",
-            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Zerlege jede Seite vollstaendig in ihre grafischen Elemente (Formen/Banner in Originalfarbe, Text-Positionen/-Stile ohne Originalinhalt, Fotoflaechen leer, Logo-Position).`,
+            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Zerlege jede Seite vollstaendig in ihre grafischen Elemente (Formen/Banner in Originalfarbe, Text-Positionen/-Stile mit Originalinhalt NUR bei Text auf Formflaechen, Fotoflaechen leer, Logo-Position).`,
           },
         ],
       },
@@ -597,6 +608,8 @@ async function analyzeDesignChunk(
         if (Number.isFinite(Number(b.fontWeight))) block.fontWeight = clamp(Number(b.fontWeight), 300, 900);
         if (b.align && ALIGNS.has(b.align)) block.align = b.align;
         if (Number.isFinite(Number(b.radius))) block.radius = Number(b.radius);
+        if ((b.type === "heading" || b.type === "text") && b.text && String(b.text).trim())
+          block.text = String(b.text).trim().slice(0, 200);
         return block;
       }),
   }));
