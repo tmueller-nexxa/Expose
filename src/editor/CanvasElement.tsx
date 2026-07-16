@@ -25,7 +25,9 @@ interface Props {
   onDropFile: (id: string, file: File) => void;
 }
 
-type Corner = "nw" | "ne" | "sw" | "se";
+// Ecken UND Kanten - an jeder Seite laesst sich die Groesse per Ziehen aendern.
+type HandlePos = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
+const HANDLES: HandlePos[] = ["nw", "ne", "sw", "se", "n", "s", "e", "w"];
 
 export function CanvasElement(props: Props) {
   const {
@@ -84,7 +86,7 @@ export function CanvasElement(props: Props) {
     });
   }
 
-  function onHandleDown(e: React.PointerEvent, corner: Corner) {
+  function onHandleDown(e: React.PointerEvent, corner: HandlePos) {
     onSelect(el.id);
     if (el.locked) return;
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
@@ -110,7 +112,7 @@ export function CanvasElement(props: Props) {
 
   const handles = selected && editable && !editing && !el.locked && (
     <>
-      {(["nw", "ne", "sw", "se"] as Corner[]).map((c) => (
+      {HANDLES.map((c) => (
         <div
           key={c}
           className={`handle ${c}`}
@@ -151,20 +153,22 @@ export function CanvasElement(props: Props) {
           if (f) onDropFile(el.id, f);
         }}
       >
-        {empty ? (
-          <div className="ph">
-            <IconImage size={22} />
-            <div>Bild hierher ziehen</div>
-          </div>
-        ) : (
-          <img
-            src={src}
-            alt=""
-            draggable={false}
-            style={{ objectFit: isLogo ? "contain" : (el as ImageElement).fit }}
-          />
-        )}
-        {analyzing && <div className="analyzing">KI analysiert Bild …</div>}
+        <div className="el-image-clip">
+          {empty ? (
+            <div className="ph">
+              <IconImage size={22} />
+              <div>Bild hierher ziehen</div>
+            </div>
+          ) : (
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              style={{ objectFit: isLogo ? "contain" : (el as ImageElement).fit }}
+            />
+          )}
+          {analyzing && <div className="analyzing">KI analysiert Bild …</div>}
+        </div>
         {handles}
       </div>
     );

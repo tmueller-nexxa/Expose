@@ -127,8 +127,20 @@
   outline-offset: 1px;
 }
 .el-image {
-  overflow: hidden;
   background: #f1f5f9;
+}
+/* Eigener, geclippter Innen-Wrapper statt overflow:hidden auf .el-image
+   selbst - sonst wuerden die (leicht ueberstehenden) Resize-Griffe am
+   Rand mit abgeschnitten und liessen sich nicht mehr anfassen. */
+.el-image-clip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.el-image.empty .el-image-clip {
+  display: grid;
+  place-items: center;
 }
 .el-image img {
   width: 100%;
@@ -138,8 +150,6 @@
 .el-image.empty {
   border: 2px dashed #cbd5e1;
   background: #f8fafc;
-  display: grid;
-  place-items: center;
   color: #94a3b8;
 }
 .el-image.empty .ph {
@@ -167,13 +177,13 @@
   display: flex;
   padding: 10px 12px;
   cursor: move;
-  overflow: hidden;
 }
 .el-text .txt {
   width: 100%;
   outline: none;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  overflow: hidden;
 }
 
 .el.dragging {
@@ -195,6 +205,26 @@
 .handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
 .handle.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
 .handle.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+/* Kantengriffe - laengliche Balken mittig auf jeder Seite, zum Ziehen. */
+.handle.n, .handle.s {
+  left: 50%;
+  width: 26px;
+  height: 10px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+.handle.n { top: -5px; }
+.handle.s { bottom: -5px; }
+.handle.e, .handle.w {
+  top: 50%;
+  width: 10px;
+  height: 26px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+.handle.e { right: -5px; }
+.handle.w { left: -5px; }
 
 /* Thumbnail rail (right) */
 .thumb-rail {
