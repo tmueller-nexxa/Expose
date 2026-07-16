@@ -228,12 +228,37 @@
 
 /* Thumbnail rail (right) */
 .thumb-rail {
-  width: 190px;
+  position: relative;
   flex-shrink: 0;
   background: #fff;
   border-left: 1px solid var(--border);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px 14px;
+}
+/* Ziehgriff am linken Rand: Breite der Leiste per Maus anpassen. */
+.thumb-rail-resizer {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 20;
+  touch-action: none;
+}
+.thumb-rail-resizer::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.thumb-rail-resizer:hover::after {
+  background: var(--brand);
 }
 .thumb-rail h4 {
   font-size: 11px;

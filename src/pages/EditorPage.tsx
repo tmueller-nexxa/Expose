@@ -20,6 +20,7 @@ import { clamp, fileToDataUrl, uid } from "../lib/util";
 import { fitFontSize } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import { PageCanvas } from "../editor/PageCanvas";
+import { startPointerDrag } from "../editor/pointer";
 import {
   IconArrowLeft,
   IconCheck,
@@ -28,6 +29,21 @@ import {
   IconTrash,
 } from "../components/Icons";
 import "./EditorPage.css";
+
+// Breite der Miniaturansichten-Leiste (rechts): Grenzen + Speicherung.
+const THUMB_RAIL_KEY = "expose-ki-thumb-rail-width";
+const THUMB_RAIL_MIN = 140;
+const THUMB_RAIL_MAX = 420;
+const THUMB_RAIL_DEFAULT = 190;
+const THUMB_RAIL_PADDING = 28; // 14px links + rechts (siehe .thumb-rail)
+
+function loadThumbRailWidth(): number {
+  const raw = Number(localStorage.getItem(THUMB_RAIL_KEY));
+  if (Number.isFinite(raw) && raw >= THUMB_RAIL_MIN && raw <= THUMB_RAIL_MAX) {
+    return raw;
+  }
+  return THUMB_RAIL_DEFAULT;
+}
 
 // Hat der Nutzer bereits eigene Bilder platziert? (Standardseiten zaehlen nicht.)
 function hasPlacedImages(project: ExposeProject): boolean {
@@ -59,9 +75,29 @@ export function EditorPage() {
   );
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(560);
+  const [thumbRailWidth, setThumbRailWidth] = useState(loadThumbRailWidth);
   // Es liegt eine neuere Beispiel-Struktur vor als das offene Projekt.
   const [structureUpdate, setStructureUpdate] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
+
+  function onThumbRailResizeStart(e: React.PointerEvent) {
+    const startWidth = thumbRailWidth;
+    startPointerDrag(
+      e,
+      (dx) => {
+        // Griff liegt am linken Rand der rechten Leiste: nach links ziehen
+        // (dx negativ) vergroessert die Breite, nach rechts verkleinert sie.
+        const next = clamp(startWidth - dx, THUMB_RAIL_MIN, THUMB_RAIL_MAX);
+        setThumbRailWidth(next);
+      },
+      () => {
+        setThumbRailWidth((w) => {
+          localStorage.setItem(THUMB_RAIL_KEY, String(w));
+          return w;
+        });
+      },
+    );
+  }
 
   // Projekt laden oder aus Vorlage erstellen.
   useEffect(() => {
@@ -513,7 +549,12 @@ export function EditorPage() {
           )}
         </div>
 
-        <aside className="thumb-rail">
+        <aside className="thumb-rail" style={{ width: thumbRailWidth }}>
+          <div
+            className="thumb-rail-resizer"
+            onPointerDown={onThumbRailResizeStart}
+            title="Breite der Miniaturansichten ziehen"
+          />
           <h4>Seiten</h4>
           {project.pages.map((pg, i) => (
             <div
@@ -528,7 +569,7 @@ export function EditorPage() {
               <div className="frame">
                 <PageCanvas
                   page={pg}
-                  width={162}
+                  width={thumbRailWidth - THUMB_RAIL_PADDING}
                   editable={false}
                   selectedId={null}
                   editingId={null}
