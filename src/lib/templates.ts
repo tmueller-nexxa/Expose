@@ -27,6 +27,11 @@ import type {
 } from "./types";
 import { uid } from "./util";
 
+// Fotos liegen IMMER auf der hintersten Ebene (direkt ueber dem gesperrten
+// Seitenhintergrund, falls vorhanden) - so verdecken sie nie Formen/Text/
+// Logo, egal in welcher Reihenfolge die Elemente angelegt wurden.
+export const IMAGE_Z = 2;
+
 // Baut aus einer 1:1 als Bild uebernommenen Standardseite ein Page-Objekt:
 // gesperrter Vollbild-Hintergrund + Foto-Platzhalter an den erkannten (und
 // aus dem Bild entfernten) Fotostellen.
@@ -46,7 +51,6 @@ function boilerplatePageToPage(p: CapturedImagePage): Page {
       locked: true,
     },
   ];
-  let z = 2;
   for (const slot of p.photoSlots ?? []) {
     elements.push({
       id: uid("el"),
@@ -55,7 +59,7 @@ function boilerplatePageToPage(p: CapturedImagePage): Page {
       y: slot.y,
       w: slot.w,
       h: slot.h,
-      z: z++,
+      z: IMAGE_Z,
       src: "",
       fit: "cover",
     });
@@ -102,7 +106,9 @@ function layoutPages(layout: StoredLayout | null, logo: StoredFile | null): Page
 
 // --- Handgebauter Blanko-Aufbau (Fallback ohne analysiertes Beispiel) ----
 
-let zCounter = 1;
+// Start oberhalb von IMAGE_Z, damit Ueberschriften/Formen nie zufaellig mit
+// der (fixen) Foto-Ebene kollidieren.
+let zCounter = 10;
 
 function heading(
   text: string,
@@ -136,7 +142,7 @@ function imageSlot(x: number, y: number, w: number, h: number): PageElement {
     y,
     w,
     h,
-    z: zCounter++,
+    z: IMAGE_Z,
     src: "",
     fit: "cover",
   };
@@ -315,7 +321,7 @@ export function createProject(
   logo: StoredFile | null,
   boilerplate: StoredBoilerplate | null = null,
 ): ExposeProject {
-  zCounter = 1;
+  zCounter = 10;
   const accent = ACCENT[type];
   const title = TITLE[type];
 

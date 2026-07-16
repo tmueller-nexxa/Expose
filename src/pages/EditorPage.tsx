@@ -13,6 +13,7 @@ import {
 import {
   createProject,
   createProjectFromLayout,
+  IMAGE_Z,
   projectStamp,
 } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
@@ -199,7 +200,7 @@ export function EditorPage() {
             ...pg,
             elements: pg.elements.map((e) =>
               e.id === elId
-                ? ({ ...e, src: "", imgScale: 1, imgX: 0, imgY: 0 } as ImageElement)
+                ? ({ ...e, src: "", imgScale: 1, imgX: 0, imgY: 0, z: IMAGE_Z } as ImageElement)
                 : e,
             ),
           })),
@@ -236,13 +237,16 @@ export function EditorPage() {
     }
     const src = await fileToDataUrl(file);
     // Zoom/Position auf das neue Foto zuruecksetzen - eine fuer das alte
-    // Foto passende Verschiebung/Zoomstufe passt nicht zum neuen Bild.
+    // Foto passende Verschiebung/Zoomstufe passt nicht zum neuen Bild. z
+    // immer auf die hinterste Ebene setzen, damit das Foto nie Formen/Text
+    // verdeckt (auch falls es zuvor per "In den Vordergrund" verschoben war).
     patchElement(elId, {
       src,
       fit: "cover",
       imgScale: 1,
       imgX: 0,
       imgY: 0,
+      z: IMAGE_Z,
     } as Partial<ImageElement>);
     setSelectedId(elId);
   }
@@ -255,6 +259,7 @@ export function EditorPage() {
     const src = await fileToDataUrl(file);
     const w = 0.34;
     const h = 0.26;
+    // Fotos liegen immer auf der hintersten Ebene (siehe dropFileToElement).
     const newEl: ImageElement = {
       id: uid("el"),
       kind: "image",
@@ -262,7 +267,7 @@ export function EditorPage() {
       y: clamp(yFrac - h / 2, 0, 1 - h),
       w,
       h,
-      z: maxZ() + 1,
+      z: IMAGE_Z,
       src,
       fit: "cover",
     };
@@ -345,6 +350,7 @@ export function EditorPage() {
   function addPlaceholder() {
     const w = 0.4;
     const h = 0.3;
+    // Fotos liegen immer auf der hintersten Ebene (siehe dropFileToElement).
     const newEl: ImageElement = {
       id: uid("el"),
       kind: "image",
@@ -352,7 +358,7 @@ export function EditorPage() {
       y: (1 - h) / 2,
       w,
       h,
-      z: maxZ() + 1,
+      z: IMAGE_Z,
       src: "",
       fit: "cover",
     };

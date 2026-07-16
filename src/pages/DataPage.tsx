@@ -20,6 +20,7 @@ import {
   testApiKey,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
+import { IMAGE_Z } from "../lib/templates";
 import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
@@ -187,7 +188,9 @@ export function DataPage() {
           const cp = contentPages[i];
           const design = res.pages[i] ?? { title: `Seite ${i + 1}`, background: "#ffffff", blocks: [] };
           const shapes = design.blocks.filter((b) => b.type === "shape");
-          let z = 1;
+          // Fotos liegen immer auf der hintersten Ebene (IMAGE_Z) - Formen/
+          // Text starten oberhalb davon, damit Fotos sie nie verdecken.
+          let z = 10;
           const elements: PageElement[] = design.blocks.map((b) => {
             if (b.type === "shape") {
               return {
@@ -210,7 +213,7 @@ export function DataPage() {
                 y: b.y,
                 w: b.w,
                 h: b.h,
-                z: z++,
+                z: IMAGE_Z,
                 src: "",
                 fit: "cover",
               };
