@@ -186,6 +186,26 @@ export function EditorPage() {
 
   const deleteElement = useCallback(
     (elId: string) => {
+      const cur = projectRef.current;
+      const el = cur?.pages[pageIndex]?.elements.find((e) => e.id === elId);
+      // Ein befuelltes Foto wird nur GELEERT (Platzhalter bleibt an Ort und
+      // Stelle mit seiner Groesse erhalten) - erst ein leerer Platzhalter
+      // wird beim naechsten Loeschen komplett entfernt. So geht der
+      // muehsam positionierte/skalierte Rahmen nicht verloren, nur weil man
+      // das eingefuegte Foto wieder loeschen will.
+      if (el?.kind === "image" && !el.locked && el.src) {
+        mutatePages((pages) =>
+          pages.map((pg) => ({
+            ...pg,
+            elements: pg.elements.map((e) =>
+              e.id === elId
+                ? ({ ...e, src: "", imgScale: 1, imgX: 0, imgY: 0 } as ImageElement)
+                : e,
+            ),
+          })),
+        );
+        return;
+      }
       mutatePages((pages) =>
         pages.map((pg) => ({
           ...pg,
@@ -196,7 +216,7 @@ export function EditorPage() {
       );
       setSelectedId(null);
     },
-    [mutatePages],
+    [mutatePages, pageIndex],
   );
 
   const maxZ = useCallback(() => {
@@ -930,7 +950,15 @@ function Inspector({
       <button className="tool" onClick={onFront} title="In den Vordergrund">
         ⬆
       </button>
-      <button className="btn btn-danger" onClick={onDelete}>
+      <button
+        className="btn btn-danger"
+        onClick={onDelete}
+        title={
+          element.kind === "image" && img.src
+            ? "Foto entfernen (Platzhalter bleibt erhalten)"
+            : "Element löschen"
+        }
+      >
         <IconTrash size={16} />
       </button>
     </div>
