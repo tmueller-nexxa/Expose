@@ -282,7 +282,8 @@ export function EditorPage() {
     // Auch die GLOBALE Vorlage aktualisieren, sonst haette "Neu aufbauen"
     // oder ein neu erstelltes Exposé eines anderen Typs wieder das
     // Original-Foto (die globale Vorlage ist die Quelle beim Neuaufbau).
-    if (pg.boilerplateId) {
+    const source = pg.sourcePage;
+    if (source?.kind === "boilerplate") {
       updateData((prev) => {
         if (!prev.boilerplate) return prev;
         return {
@@ -290,7 +291,7 @@ export function EditorPage() {
           boilerplate: {
             ...prev.boilerplate,
             pages: prev.boilerplate.pages.map((bp) =>
-              bp.id === pg.boilerplateId
+              bp.id === source.id
                 ? {
                     ...bp,
                     image: erased,
@@ -298,6 +299,29 @@ export function EditorPage() {
                   }
                 : bp,
             ),
+          },
+        };
+      });
+    } else if (source?.kind === "layout") {
+      updateData((prev) => {
+        const layout = prev.layouts[exType];
+        if (!layout) return prev;
+        return {
+          ...prev,
+          layouts: {
+            ...prev.layouts,
+            [exType]: {
+              ...layout,
+              pages: layout.pages.map((lp) =>
+                lp.id === source.id
+                  ? {
+                      ...lp,
+                      image: erased,
+                      photoSlots: [...(lp.photoSlots ?? []), rect],
+                    }
+                  : lp,
+              ),
+            },
           },
         };
       });

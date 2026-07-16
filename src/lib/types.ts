@@ -67,46 +67,50 @@ export interface ApiSettings {
   model: string;
 }
 
-// --- Aus Beispiel-Exposés gelernte Seitenstruktur -----------------------
+// --- Aus Beispiel-Exposés 1:1 uebernommene Seiten ------------------------
+//
+// Jede Seite eines Beispiel-Exposés wird komplett 1:1 als Bild uebernommen
+// (Design, Schrift, Icons, Farben, Groessen - exakt wie im Original). Nur
+// erkannte Bildbereiche (und bei Inhaltsseiten zusaetzlich Textbereiche)
+// werden aus dem Bild entfernt, damit sie durch neue Fotos/Texte ersetzt
+// werden koennen.
 
-export type LayoutBlockType = "image" | "heading" | "text" | "logo";
-
-export interface LayoutBlock {
-  type: LayoutBlockType;
+export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
-  text?: string; // generischer Platzhaltertext bei heading/text
-  align?: "left" | "center" | "right";
 }
 
-export interface LayoutPage {
+// Gemeinsame Basis fuer jede 1:1 uebernommene Seite.
+export interface CapturedPage {
+  id: string;
   title: string;
-  blocks: LayoutBlock[];
+  image: string; // DataURL der Seitenkopie (Design/Schrift/Icons/Farben 1:1)
+  order: number; // urspruengliche Seitenreihenfolge
+  // Fotobereiche, die aus dem Bild entfernt wurden und durch Platzhalter
+  // ersetzt werden (Anteile 0..1).
+  photoSlots?: Rect[];
 }
 
-// Die von der KI aus den Beispielen abgeleitete Struktur eines Typs.
+// Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...):
+// zusaetzlich zu Fotos wird auch der objektspezifische Text entfernt, das
+// Design (Rahmen, Icons, Farben, statische Beschriftungen) bleibt 1:1.
 export interface StoredLayout {
-  pages: LayoutPage[];
+  pages: CapturedPage[];
   source: string; // Name der analysierten Beispieldatei
   pageCount: number;
   createdAt: number;
 }
 
 // Standardseiten (Impressum, AGB, Widerruf, Kontakt), die 1:1 als exakte
-// Seitenkopie (Bild) uebernommen werden - gilt fuer ALLE Expose-Typen.
+// Seitenkopie (Bild) uebernommen werden - gilt fuer ALLE Expose-Typen. Der
+// Text bleibt hier vollstaendig erhalten, nur Fotos werden zu Platzhaltern
+// (Kontakt behaelt sogar sein Foto = Makler-Portrait).
 export type BoilerplateKind = "impressum" | "agb" | "widerruf" | "kontakt";
 
-export interface BoilerplatePage {
-  id: string;
+export interface BoilerplatePage extends CapturedPage {
   kind: BoilerplateKind;
-  title: string;
-  image: string; // DataURL der Seitenkopie (Text/Grafik/Formatierung 1:1)
-  order: number; // urspruengliche Seitenreihenfolge
-  // Fotobereiche, die durch Platzhalter ersetzt werden (Anteile 0..1).
-  // Nur bei Impressum/AGB/Widerruf; Kontakt behaelt sein Foto.
-  photoSlots?: { x: number; y: number; w: number; h: number }[];
 }
 
 export interface StoredBoilerplate {
@@ -187,10 +191,11 @@ export interface Page {
   title: string;
   background: string;
   elements: PageElement[];
-  // Bei Standardseiten: Referenz auf die urspruengliche BoilerplatePage.id
-  // in AppData.boilerplate, damit Aenderungen (z.B. Foto entfernen) auch in
-  // der globalen Vorlage nachgezogen werden koennen.
-  boilerplateId?: string;
+  // Bei 1:1 uebernommenen Seiten: Referenz auf die urspruengliche
+  // CapturedPage/BoilerplatePage.id, damit Aenderungen (z.B. Foto entfernen)
+  // auch in der gespeicherten Vorlage nachgezogen werden koennen.
+  // "boilerplate" -> AppData.boilerplate (global), "layout" -> AppData.layouts[type].
+  sourcePage?: { kind: "boilerplate" | "layout"; id: string };
 }
 
 export interface ExposeProject {

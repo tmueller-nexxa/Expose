@@ -5,14 +5,14 @@ import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
   type BoilerplatePage,
+  type CapturedPage,
   type ExposeType,
   type StoredFile,
   type StyleText,
 } from "../lib/types";
 import {
   aiReady,
-  analyzeBoilerplatePhotos,
-  analyzeExampleLayout,
+  analyzePagesRegions,
   MAX_ANALYZE_PAGES,
   MODEL_OPTIONS,
   testApiKey,
@@ -46,7 +46,7 @@ export function DataPage() {
     { ok: boolean; msg: string } | null
   >(null);
   const [progress, setProgress] = useState<{
-    phase: "render" | "analyze" | "boiler";
+    phase: "render" | "analyze" | "boiler" | "erase";
     done: number;
     total: number;
   } | null>(null);
@@ -137,11 +137,16 @@ export function DataPage() {
       }
 
       // Standardseiten (Impressum/AGB/Widerruf/Kontakt) erkennen und abtrennen.
+      // ALLE Seiten werden 1:1 als Bild uebernommen (Design, Schrift, Icons,
+      // Farben, Groessen exakt wie im Original). Auf Standardseiten (ausser
+      // Kontakt) bleibt der Text vollstaendig erhalten - nur Fotos werden
+      // durch Platzhalter ersetzt. Auf Inhaltsseiten wird zusaetzlich der
+      // gesamte Text entfernt, da er objektspezifisch ist und neu erzeugt wird.
       const kinds = detectBoilerplate(
         pages.map((p) => ({ text: p.text, imageCount: p.imageCount })),
       );
       const boilerPages: BoilerplatePage[] = [];
-      const contentImages: string[] = [];
+      const contentPages: { order: number; image: string }[] = [];
       pages.forEach((p, i) => {
         const kind = kinds[i];
         if (kind) {
@@ -153,58 +158,79 @@ export function DataPage() {
             order: i,
           });
         } else if (p.image) {
-          contentImages.push(p.image);
+          contentPages.push({ order: i, image: p.image });
         }
       });
 
-      // Objekt-Inhalt zur Struktur-Analyse an die KI geben.
-      let contentCount = 0;
-      if (contentImages.length > 0) {
-        setProgress({ phase: "analyze", done: 0, total: contentImages.length });
-        const res = await analyzeExampleLayout(
+      // Inhaltsseiten: Fotos + Text erkennen, beides aus dem Bild entfernen.
+      const capturedContent: CapturedPage[] = [];
+      if (contentPages.length > 0) {
+        setProgress({ phase: "analyze", done: 0, total: contentPages.length });
+        const res = await analyzePagesRegions(
           data.api,
-          contentImages,
-          activeType,
+          contentPages.map((p) => p.image),
+          true,
           (done, total) => setProgress({ phase: "analyze", done, total }),
         );
         if (!res.ok) {
           setAnalyzeMsg({ ok: false, msg: res.message });
           return;
         }
-        contentCount = res.pages.length;
+        setProgress({ phase: "erase", done: 0, total: contentPages.length });
+        for (let i = 0; i < contentPages.length; i++) {
+          const cp = contentPages[i];
+          const regions = res.pages[i] ?? { photos: [], texts: [] };
+          const eraseRects = [...regions.photos, ...regions.texts];
+          const image =
+            eraseRects.length > 0
+              ? await eraseRegionsFromImage(cp.image, eraseRects)
+              : cp.image;
+          capturedContent.push({
+            id: uid("cp"),
+            title: `Seite ${i + 1}`,
+            image,
+            order: cp.order,
+            photoSlots: regions.photos,
+          });
+          setProgress({ phase: "erase", done: i + 1, total: contentPages.length });
+        }
         updateData((prev) => ({
           ...prev,
           layouts: {
             ...prev.layouts,
             [activeType]: {
-              pages: res.pages,
+              pages: capturedContent,
               source,
-              pageCount: res.pages.length,
+              pageCount: capturedContent.length,
               createdAt: Date.now(),
             },
           },
         }));
       }
 
-      // Fotos auf Impressum/AGB/Widerruf durch Platzhalter ersetzen.
-      // (Kontakt behaelt sein Foto = dein Portrait.)
-      // Wichtig: die Fotos werden nicht nur mit einem Platzhalter UEBERDECKT,
-      // sondern aus dem Hintergrundbild selbst entfernt (uebermalt) - danach
-      // ist an der Stelle wirklich kein Foto mehr vorhanden.
+      // Standardseiten: nur Fotos erkennen (Impressum/AGB/Widerruf), aus dem
+      // Bild entfernen und durch Platzhalter ersetzen. Kontakt behaelt sein
+      // Foto (Makler-Portrait) unangetastet. Text bleibt auf allen
+      // Standardseiten vollstaendig erhalten.
       const needPhotos = boilerPages.filter((b) => b.kind !== "kontakt");
       if (needPhotos.length > 0) {
         setProgress({ phase: "boiler", done: 0, total: needPhotos.length });
-        for (let i = 0; i < needPhotos.length; i++) {
-          const b = needPhotos[i];
-          const src = pages[b.order]?.image;
-          if (src) {
-            const r = await analyzeBoilerplatePhotos(data.api, src);
-            if (r.ok && r.rects.length > 0) {
-              b.photoSlots = r.rects;
-              b.image = await eraseRegionsFromImage(src, r.rects);
+        const res = await analyzePagesRegions(
+          data.api,
+          needPhotos.map((b) => pages[b.order]?.image ?? b.image),
+          false,
+        );
+        if (res.ok) {
+          for (let i = 0; i < needPhotos.length; i++) {
+            const b = needPhotos[i];
+            const src = pages[b.order]?.image ?? b.image;
+            const rects = res.pages[i]?.photos ?? [];
+            if (rects.length > 0) {
+              b.photoSlots = rects;
+              b.image = await eraseRegionsFromImage(src, rects);
             }
+            setProgress({ phase: "boiler", done: i + 1, total: needPhotos.length });
           }
-          setProgress({ phase: "boiler", done: i + 1, total: needPhotos.length });
         }
       }
 
@@ -217,7 +243,7 @@ export function DataPage() {
       }
 
       const parts: string[] = [];
-      if (contentCount > 0) parts.push(`${contentCount} Inhaltsseite(n)`);
+      if (capturedContent.length > 0) parts.push(`${capturedContent.length} Inhaltsseite(n) 1:1 übernommen`);
       if (boilerPages.length > 0) {
         const names = [...new Set(boilerPages.map((b) => BOILERPLATE_TITLES[b.kind]))];
         parts.push(`${boilerPages.length} Standardseite(n) 1:1 übernommen (${names.join(", ")})`);
@@ -403,12 +429,13 @@ export function DataPage() {
               <div>
                 <div className="lp-title">Seitenstruktur übernehmen</div>
                 <div className="lp-desc">
-                  Die KI liest das Beispiel ein und baut den Aufbau als
-                  Blanko-Vorlage nach. Standardseiten (Impressum, AGB,
-                  Widerruf, Kontakt) werden mit Text, Schriften &amp; Grafik{" "}
-                  <b>1:1</b> übernommen – auf Impressum/AGB/Widerruf werden die
-                  Objektfotos durch <b>Platzhalter</b> ersetzt (Kontakt behält
-                  sein Foto). Gilt für alle Exposé-Typen.
+                  Jede Seite wird <b>1:1</b> als Bild übernommen – Design,
+                  Schrift, Icons, Farben &amp; Größen exakt wie im Original.
+                  Standardseiten (Impressum, AGB, Widerruf, Kontakt) behalten
+                  ihren Text vollständig, auf Inhaltsseiten wird der
+                  objektspezifische Text entfernt. Objektfotos werden auf
+                  allen Seiten durch <b>Platzhalter</b> ersetzt (Kontakt
+                  behält sein Foto). Gilt für alle Exposé-Typen.
                 </div>
               </div>
               <button
@@ -429,7 +456,9 @@ export function DataPage() {
                     ? `Seiten werden gelesen … ${progress.done}/${progress.total || "…"}`
                     : progress.phase === "boiler"
                       ? `Standardseiten aufbereiten … ${progress.done}/${progress.total}`
-                      : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
+                      : progress.phase === "erase"
+                        ? `Fotos & Text entfernen … ${progress.done}/${progress.total} Seiten`
+                        : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
                 </div>
                 <div className="lp-progress-bar">
                   <div

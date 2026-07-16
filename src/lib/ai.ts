@@ -7,13 +7,7 @@
 //  - Direkt (kein Proxy konfiguriert): Aufruf laeuft direkt aus dem Browser
 //    mit dem vom Makler im Datenbereich hinterlegten API-Key (lokaler Modus).
 
-import type {
-  ApiSettings,
-  ExposeType,
-  LayoutBlock,
-  LayoutPage,
-  StyleText,
-} from "./types";
+import type { ApiSettings, ExposeType, Rect, StyleText } from "./types";
 import { splitDataUrl } from "./util";
 import { aiProxyUrl } from "../firebase.config";
 import { currentToken } from "./cloud";
@@ -242,62 +236,64 @@ export async function generateImageText(
   }
 }
 
-// --- Layout-Analyse: Seitenstruktur aus Beispiel-Exposés ableiten -------
+// --- Regionserkennung: Foto- (und bei Inhaltsseiten Text-)bereiche ------
+//
+// Jede Seite eines Beispiel-Exposés wird 1:1 als Bild uebernommen. Die KI
+// erkennt darauf lediglich Rechtecke: echte Fotos (auf ALLEN Seiten) sowie,
+// bei Inhaltsseiten, zusaetzlich alle Textbereiche (die entfernt werden,
+// da sie objektspezifisch sind). Design, Icons, Farben, Rahmen bleiben
+// unangetastet, da nur die erkannten Rechtecke aus dem Bild entfernt werden.
 
-export interface LayoutResult {
-  ok: true;
-  pages: LayoutPage[];
+interface RegionSet {
+  photos: Rect[];
+  texts: Rect[];
 }
 
-const LAYOUT_TOOL = {
-  name: "expose_layout",
+const REGION_TOOL = {
+  name: "page_regions",
   description:
-    "Beschreibt den strukturellen Aufbau eines Exposés Seite fuer Seite als leere Vorlage (Platzhalter), damit dieser Aufbau nachgebaut werden kann.",
+    "Liefert pro Seite die Bereiche echter Fotos sowie (falls angefordert) aller Textstellen.",
   input_schema: {
     type: "object",
     properties: {
       pages: {
         type: "array",
-        description: "Seiten in Reihenfolge, wie im Beispiel.",
+        description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Seitenbilder, eines pro Bild.",
         items: {
           type: "object",
           properties: {
-            title: {
-              type: "string",
-              description:
-                "Abschnittstitel der Seite (z.B. Titelseite, Objektbeschreibung, Lage, Ausstattung, Grundriss, Kontakt).",
-            },
-            blocks: {
+            photos: {
               type: "array",
-              description: "Elemente auf der Seite mit Position (Anteile 0..1).",
+              description:
+                "Rechtecke echter Fotos (Anteile 0..1). NUR echte Fotografien - KEINE Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Farbflaechen oder Text.",
               items: {
                 type: "object",
                 properties: {
-                  type: {
-                    type: "string",
-                    enum: ["image", "heading", "text", "logo"],
-                    description:
-                      "image=Bildflaeche, heading=Ueberschrift, text=Textblock, logo=Logo-Bereich.",
-                  },
                   x: { type: "number" },
                   y: { type: "number" },
                   w: { type: "number" },
                   h: { type: "number" },
-                  text: {
-                    type: "string",
-                    description:
-                      "Nur bei heading/text: GENERISCHER Platzhaltertext (z.B. 'Objektbeschreibung'), KEINE echten Objektdaten aus dem Beispiel.",
-                  },
-                  align: {
-                    type: "string",
-                    enum: ["left", "center", "right"],
-                  },
                 },
-                required: ["type", "x", "y", "w", "h"],
+                required: ["x", "y", "w", "h"],
+              },
+            },
+            texts: {
+              type: "array",
+              description:
+                "Nur falls angefordert: Rechtecke ALLER Textstellen (Ueberschriften, Absaetze, Labels, Zahlen, Aufzaehlungen) - unabhaengig davon, ob der Text objektspezifisch oder statisch wirkt.",
+              items: {
+                type: "object",
+                properties: {
+                  x: { type: "number" },
+                  y: { type: "number" },
+                  w: { type: "number" },
+                  h: { type: "number" },
+                },
+                required: ["x", "y", "w", "h"],
               },
             },
           },
-          required: ["title", "blocks"],
+          required: ["photos"],
         },
       },
     },
@@ -305,12 +301,32 @@ const LAYOUT_TOOL = {
   },
 };
 
+function normalizeRects(raw: { x: unknown; y: unknown; w: unknown; h: unknown }[]): Rect[] {
+  let maxCoord = 0;
+  for (const r of raw)
+    for (const v of [r.x, r.y, r.w, r.h]) {
+      const n = Number(v);
+      if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
+    }
+  const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
+  // Kleiner Sicherheitsrand: schaetzt die KI die Grenzen minimal zu knapp,
+  // bliebe sonst ein Rand des Originals hinter dem Platzhalter sichtbar.
+  const MARGIN = 0.02;
+  return raw.map((r) => {
+    const x = clamp01(Number(r.x) * scale - MARGIN);
+    const y = clamp01(Number(r.y) * scale - MARGIN);
+    const w = clamp01(Math.min(Number(r.w) * scale + MARGIN * 2, 1 - x), 0.02);
+    const h = clamp01(Math.min(Number(r.h) * scale + MARGIN * 2, 1 - y), 0.01);
+    return { x, y, w, h };
+  });
+}
+
 // Analysiert einen kleinen Block von Seitenbildern (max. ~4) in EINER Anfrage.
-async function analyzeLayoutChunk(
+async function analyzeRegionsChunk(
   api: ApiSettings,
   chunk: string[],
-  type: ExposeType,
-): Promise<LayoutPage[] | AiError> {
+  includeText: boolean,
+): Promise<RegionSet[] | AiError> {
   const imageBlocks = chunk.map((dataUrl) => {
     const { mediaType, base64 } = splitDataUrl(dataUrl);
     return {
@@ -319,15 +335,25 @@ async function analyzeLayoutChunk(
     };
   });
 
-  const system = `Du bist Experte fuer Layout-Analyse von Immobilien-Exposés (${TYPE_LABEL[type]}). Analysiere die gezeigten Beispielseiten und beschreibe den STRUKTURELLEN Aufbau als leere Vorlage. Wichtig: Uebernimm Anordnung, Anzahl und Position der Bild-, Text- und Ueberschriften-Bereiche sowie die Logo-Position moeglichst exakt. Bei Foto-Collagen: jedes Foto als eigenen image-Block. Verwende fuer Ueberschriften generische Abschnittstitel, NICHT die konkreten Objektdaten. Koordinaten als Anteile 0..1. Gib das Ergebnis ausschliesslich ueber das Werkzeug "expose_layout" zurueck.`;
+  const textInstruction = includeText
+    ? "Markiere ZUSAETZLICH ALLE Textstellen auf jeder Seite als Rechtecke in \"texts\" - jede Ueberschrift, jeden Absatz, jedes Label, jede Zahl/Aufzaehlung. Erfasse wirklich saemtlichen sichtbaren Text, unabhaengig davon, ob er wie ein fester Vorlagentext oder wie objektspezifischer Inhalt wirkt. Icons, Logos, Rahmen, Farbflaechen und Fotos sind KEIN Text."
+    : "Gib \"texts\" als leeres Array zurueck (auf dieser Seite bleibt aller Text erhalten).";
+
+  const system =
+    "Du erkennst auf Immobilien-Exposé-Seiten praezise Bildbereiche. " +
+    "Fotos: ausschliesslich echte, austauschbare Fotografien (Raeume, Gebaeude, Personen, Landschaften). " +
+    "KEINE Fotos sind: Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Text, sowie grossflaechige Hintergrund-/Dekor-Elemente wie farbige oder graue Balken, Seitenleisten, Verlaeufe oder Rahmen - auch wenn diese wie ein Bild aussehen. " +
+    "Ein echtes Foto ist eine klar begrenzte, in sich geschlossene Aufnahme, niemals ein Element, das ueber die gesamte Seitenhoehe oder den gesamten Seitenrand laeuft. " +
+    textInstruction +
+    " Koordinaten sind Anteile 0..1 der Seitenbreite/-hoehe, Ursprung oben links; x+w darf 1 nicht ueberschreiten, y+h darf 1 nicht ueberschreiten. " +
+    "Antworte ausschliesslich ueber das Werkzeug \"page_regions\" mit GENAU einem Eintrag pro uebergebenem Seitenbild, in derselben Reihenfolge.";
 
   const data = await callAnthropic(api, {
     model: api.model,
-    // Grosszuegiges Ausgabe-Budget, damit die Struktur nicht abgeschnitten wird.
-    max_tokens: 4096,
+    max_tokens: 2048,
     system,
-    tools: [LAYOUT_TOOL],
-    tool_choice: { type: "tool", name: "expose_layout" },
+    tools: [REGION_TOOL],
+    tool_choice: { type: "tool", name: "page_regions" },
     messages: [
       {
         role: "user",
@@ -335,7 +361,7 @@ async function analyzeLayoutChunk(
           ...imageBlocks,
           {
             type: "text",
-            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Erstelle daraus die leere Seitenstruktur (Platzhalter), eine Seite pro Bild, mit Positionen als Anteile 0..1.`,
+            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés in Reihenfolge. Erkenne pro Seite die Fotobereiche${includeText ? " und alle Textbereiche" : ""}.`,
           },
         ],
       },
@@ -343,212 +369,86 @@ async function analyzeLayoutChunk(
   });
 
   const tool = data.content.find((c) => c.type === "tool_use");
-  const input = tool?.input as { pages?: LayoutPage[] } | undefined;
-  if (!input?.pages || input.pages.length === 0) {
-    return { ok: false, message: "Die KI konnte keine Struktur ableiten." };
+  const input = tool?.input as { pages?: { photos?: Rect[]; texts?: Rect[] }[] } | undefined;
+  if (!input?.pages) {
+    return { ok: false, message: "Die KI konnte keine Bereiche erkennen." };
   }
 
-  // Prozent-/Pixelwerte auf 0..1 normalisieren.
-  let maxCoord = 0;
-  for (const pg of input.pages)
-    for (const b of pg.blocks ?? [])
-      for (const v of [b.x, b.y, b.w, b.h]) {
-        const n = Number(v);
-        if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
-      }
-  const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
-  const s = (v: unknown) => Number(v) * scale;
+  // Defensiv auf die Chunk-Laenge ausrichten (padden/kuerzen), damit die
+  // Positionszuordnung zu den Originalseiten nicht verrutscht.
+  const pages = input.pages.slice(0, chunk.length);
+  while (pages.length < chunk.length) pages.push({ photos: [], texts: [] });
 
-  const ALIGNS = new Set(["left", "center", "right"]);
-
-  return input.pages.map((pg) => ({
-    title: String(pg.title ?? "Seite").slice(0, 60),
-    blocks: (pg.blocks ?? [])
-      .filter((b) => b && b.type)
-      .slice(0, 30)
-      .map((b) => {
-        // Nur tatsaechlich vorhandene optionale Felder setzen - niemals
-        // "undefined" (Firestore lehnt Feldwerte mit undefined ab).
-        const block: LayoutBlock = {
-          type: b.type,
-          x: clamp01(s(b.x)),
-          y: clamp01(s(b.y)),
-          w: clamp01(s(b.w), 0.02),
-          h: clamp01(s(b.h), 0.01),
-        };
-        if (b.text) block.text = String(b.text).slice(0, 200);
-        if (b.align && ALIGNS.has(b.align)) block.align = b.align;
-        return block;
-      }),
+  return pages.map((pg) => ({
+    photos: normalizeRects((pg.photos ?? []).filter((r) => r)).filter(
+      (r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.97 && r.w > 0.97),
+    ),
+    texts: includeText ? normalizeRects((pg.texts ?? []).filter((r) => r)) : [],
   }));
 }
 
-// Analysiert das Beispiel-Exposé blockweise und fuehrt die Seiten zusammen.
-// Blockweise Verarbeitung verhindert, dass die Antwort bei vielen/dichten
-// Seiten das Ausgabe-Limit sprengt.
+// Analysiert alle Seitenbilder blockweise und fuehrt die Ergebnisse
+// zusammen. Blockweise Verarbeitung + Retries verhindert, dass die Antwort
+// bei vielen Seiten das Ausgabe-Limit sprengt oder ein Ausreisser die ganze
+// Analyse abbricht; bei endgueltigem Fehlschlag wird pro Seite ein leeres
+// Ergebnis eingetragen, damit die Seitenreihenfolge erhalten bleibt.
 export const MAX_ANALYZE_PAGES = 40;
 
-export async function analyzeExampleLayout(
+export async function analyzePagesRegions(
   api: ApiSettings,
   pageImages: string[],
-  type: ExposeType,
+  includeText: boolean,
   onProgress?: (pagesDone: number, pagesTotal: number) => void,
-): Promise<LayoutResult | AiError> {
+): Promise<{ ok: true; pages: RegionSet[] } | AiError> {
   if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
   if (pageImages.length === 0)
-    return { ok: false, message: "Keine Beispielseiten zum Analysieren gefunden." };
+    return { ok: false, message: "Keine Seiten zum Analysieren gefunden." };
 
   const imgs = pageImages.slice(0, MAX_ANALYZE_PAGES);
   const total = imgs.length;
   const BATCH = 4;
-  const allPages: LayoutPage[] = [];
-  const failedBatches: string[] = [];
+  const allPages: RegionSet[] = [];
+  let firstError = "";
   let done = 0;
   onProgress?.(0, total);
 
   for (let start = 0; start < imgs.length; start += BATCH) {
     const chunk = imgs.slice(start, start + BATCH);
-    // Bis zu 3 Versuche pro Block -> robust gegen kurze Aussetzer.
-    let ok = false;
+    let result: RegionSet[] | null = null;
     let err = "";
-    for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+    for (let attempt = 1; attempt <= 3 && !result; attempt++) {
       try {
-        const res = await analyzeLayoutChunk(api, chunk, type);
+        const res = await analyzeRegionsChunk(api, chunk, includeText);
         if (Array.isArray(res)) {
-          allPages.push(...res);
-          ok = true;
+          result = res;
         } else {
           err = res.message;
         }
       } catch (e) {
         err = (e as Error).message;
       }
-      if (!ok && attempt < 3) await sleep(800 * attempt);
+      if (!result && attempt < 3) await sleep(800 * attempt);
     }
-    if (!ok) failedBatches.push(err || "unbekannt");
+    if (result) {
+      allPages.push(...result);
+    } else {
+      firstError = firstError || err || "unbekannt";
+      // Leere Ergebnisse eintragen, damit die Positionszuordnung zu den
+      // Originalseiten erhalten bleibt (keine Seite wird uebersprungen).
+      for (let i = 0; i < chunk.length; i++) allPages.push({ photos: [], texts: [] });
+    }
     done += chunk.length;
     onProgress?.(done, total);
   }
 
-  if (allPages.length === 0) {
-    return {
-      ok: false,
-      message:
-        failedBatches[0] ||
-        "Die KI konnte keine Struktur ableiten. Tipp: Bei sehr umfangreichen/bildlastigen PDFs am besten nur wenige repraesentative Seiten als Bilder (JPG/PNG) hochladen oder das Modell Claude Opus 4.8 waehlen.",
-    };
+  if (allPages.every((p) => p.photos.length === 0 && p.texts.length === 0) && firstError) {
+    return { ok: false, message: firstError };
   }
   return { ok: true, pages: allPages };
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-// --- Fotobereiche auf einer Standardseite erkennen (fuer Platzhalter) -----
-
-const PHOTO_TOOL = {
-  name: "photo_regions",
-  description:
-    "Liefert die Bereiche echter, austauschbarer Objekt-/Marketingfotos auf einer Exposé-Seite.",
-  input_schema: {
-    type: "object",
-    properties: {
-      photos: {
-        type: "array",
-        description:
-          "Rechtecke echter Fotos (Anteile 0..1). NUR echte Fotografien - KEINE Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Farbflaechen oder Text.",
-        items: {
-          type: "object",
-          properties: {
-            x: { type: "number" },
-            y: { type: "number" },
-            w: { type: "number" },
-            h: { type: "number" },
-          },
-          required: ["x", "y", "w", "h"],
-        },
-      },
-    },
-    required: ["photos"],
-  },
-};
-
-export async function analyzeBoilerplatePhotos(
-  api: ApiSettings,
-  imageDataUrl: string,
-): Promise<{ ok: true; rects: { x: number; y: number; w: number; h: number }[] } | AiError> {
-  const { mediaType, base64 } = splitDataUrl(imageDataUrl);
-  if (!base64) return { ok: false, message: "Seitenbild konnte nicht gelesen werden." };
-  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
-
-  try {
-    const data = await callAnthropic(api, {
-      model: api.model,
-      max_tokens: 600,
-      system:
-        "Du erkennst auf einer Immobilien-Exposé-Seite ausschliesslich echte, austauschbare Fotografien (z.B. Fotos von Raeumen, Gebaeuden, Personen, Landschaften). " +
-        "KEINE Fotos sind: Logos, Icons, Zierlinien, Kopf-/Fusszeilen, Text, sowie GROSSFLAECHIGE Hintergrund-/Dekor-Elemente wie farbige oder graue Balken, Seitenleisten, Verlaeufe oder Rahmen - auch wenn diese wie ein Bild aussehen. " +
-        "Ein echtes Foto ist in der Regel eine klar begrenzte, in sich geschlossene Aufnahme, NIEMALS ein Element, das ueber die gesamte Seitenhoehe oder den gesamten Seitenrand laeuft. " +
-        "Koordinaten sind Anteile 0..1 der Seitenbreite/-hoehe, Ursprung oben links; x+w darf 1 nicht ueberschreiten, y+h darf 1 nicht ueberschreiten. " +
-        "Bei Unsicherheit lieber gar kein Rechteck zurueckgeben als ein falsches. Antworte nur ueber das Werkzeug photo_regions.",
-      tools: [PHOTO_TOOL],
-      tool_choice: { type: "tool", name: "photo_regions" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: base64 },
-            },
-            {
-              type: "text",
-              text: "Markiere die Bereiche echter Fotos auf dieser Seite (Anteile 0..1). Wenn keine echten Fotos vorhanden sind, gib eine leere Liste zurueck.",
-            },
-          ],
-        },
-      ],
-    });
-    const tool = data.content.find((c) => c.type === "tool_use");
-    const input = tool?.input as
-      | { photos?: { x: number; y: number; w: number; h: number }[] }
-      | undefined;
-    const raw = input?.photos ?? [];
-    let maxCoord = 0;
-    for (const r of raw)
-      for (const v of [r.x, r.y, r.w, r.h]) {
-        const n = Number(v);
-        if (Number.isFinite(n)) maxCoord = Math.max(maxCoord, n);
-      }
-    const scale = maxCoord > 1.5 ? (maxCoord <= 100 ? 1 / 100 : 1 / maxCoord) : 1;
-    // Kleiner Sicherheitsrand: schaetzt die KI die Fotogrenzen minimal zu
-    // knapp, bliebe sonst ein Rand des Originalfotos hinter dem Platzhalter
-    // sichtbar. Lieber etwas grosszuegiger als das Original durchscheinen
-    // zu lassen.
-    const MARGIN = 0.025;
-    const rects = raw
-      .map((r) => {
-        const x = clamp01(Number(r.x) * scale - MARGIN);
-        const y = clamp01(Number(r.y) * scale - MARGIN);
-        // w/h zusaetzlich so begrenzen, dass das Rechteck nie ueber den
-        // rechten/unteren Seitenrand hinausragt (verhindert "spilling over").
-        const w = clamp01(Math.min(Number(r.w) * scale + MARGIN * 2, 1 - x), 0.03);
-        const h = clamp01(Math.min(Number(r.h) * scale + MARGIN * 2, 1 - y), 0.03);
-        return { x, y, w, h };
-      })
-      // Nur nennenswert grosse Fotos (kleine Treffer sind wohl Logos/Icons).
-      // Die Unterscheidung "echtes grosses Foto" vs. "faelschlich erkanntes
-      // Hintergrundpanel" ueberlassen wir primaer dem Prompt (das Modell
-      // sieht die Pixel, eine reine Koordinaten-Heuristik nicht) - nur ein
-      // Rechteck, das PRAKTISCH die gesamte Seite bedeckt (>97% Hoehe UND
-      // Breite gleichzeitig, also randlos randlos ueber die volle Seite),
-      // gilt als eindeutiges Hintergrund-Artefakt und wird verworfen.
-      .filter((r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.97 && r.w > 0.97));
-    return { ok: true, rects };
-  } catch (err) {
-    return { ok: false, message: (err as Error).message };
-  }
 }
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.

@@ -1,68 +1,84 @@
-// Blanko-Vorlagen pro Expose-Typ. Bilden den strukturellen Aufbau eines
-// professionellen Exposes ab (Titelseite, Objektbeschreibung, Lage,
-// Ausstattung, Kontakt). Bild-Platzhalter sind leere Bild-Elemente, die
-// per Drag&Drop befuellt werden.
+// Blanko-Vorlagen pro Expose-Typ.
+//
+// Sobald ein Beispiel-Exposé analysiert wurde, wird JEDE Seite 1:1 als Bild
+// uebernommen (Design, Schrift, Icons, Farben, Groessen - exakt wie im
+// Original). Erkannte Fotobereiche werden aus dem Bild entfernt und durch
+// Platzhalter ersetzt; bei Inhaltsseiten zusaetzlich der objektspezifische
+// Text. Ohne analysiertes Beispiel dient ein handgebauter Blanko-Aufbau als
+// Startpunkt (Bild-Platzhalter, die per Drag&Drop befuellt werden).
 
 import type {
+  CapturedPage,
   ExposeProject,
   ExposeType,
-  LayoutPage,
   Page,
   PageElement,
   StoredBoilerplate,
   StoredFile,
   StoredLayout,
-  TextElement,
 } from "./types";
 import { uid } from "./util";
-import { REF_H } from "../editor/constants";
 
-// Standardseiten anhaengen: Vorlage (Text/Schriften/Grafik 1:1) als gesperrter
-// Hintergrund; erkannte Fotobereiche werden durch Platzhalter ersetzt.
+// Baut aus einer 1:1 uebernommenen Seite (Inhalts- oder Standardseite) ein
+// Page-Objekt: gesperrter Vollbild-Hintergrund + Foto-Platzhalter an den
+// erkannten (und aus dem Bild entfernten) Fotostellen.
+function capturedPageToPage(
+  p: CapturedPage,
+  source: "boilerplate" | "layout",
+): Page {
+  const elements: PageElement[] = [
+    {
+      id: uid("el"),
+      kind: "image",
+      x: 0,
+      y: 0,
+      w: 1,
+      h: 1,
+      z: 1,
+      src: p.image,
+      fit: "contain",
+      fromBoilerplate: true,
+      locked: true,
+    },
+  ];
+  let z = 2;
+  for (const slot of p.photoSlots ?? []) {
+    elements.push({
+      id: uid("el"),
+      kind: "image",
+      x: slot.x,
+      y: slot.y,
+      w: slot.w,
+      h: slot.h,
+      z: z++,
+      src: "",
+      fit: "cover",
+    });
+  }
+  return {
+    id: uid("pg"),
+    title: p.title,
+    background: "#ffffff",
+    elements,
+    sourcePage: { kind: source, id: p.id },
+  };
+}
+
 function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
   if (!bp || bp.pages.length === 0) return [];
   return [...bp.pages]
     .sort((a, b) => a.order - b.order)
-    .map((p) => {
-      const elements: PageElement[] = [
-        {
-          id: uid("el"),
-          kind: "image",
-          x: 0,
-          y: 0,
-          w: 1,
-          h: 1,
-          z: 1,
-          src: p.image,
-          fit: "contain",
-          fromBoilerplate: true,
-          locked: true,
-        },
-      ];
-      // Foto-Platzhalter (leer, per Drag&Drop befuellbar) ueber den alten Fotos.
-      let z = 2;
-      for (const slot of p.photoSlots ?? []) {
-        elements.push({
-          id: uid("el"),
-          kind: "image",
-          x: slot.x,
-          y: slot.y,
-          w: slot.w,
-          h: slot.h,
-          z: z++,
-          src: "",
-          fit: "cover",
-        });
-      }
-      return {
-        id: uid("pg"),
-        title: p.title,
-        background: "#ffffff",
-        elements,
-        boilerplateId: p.id,
-      };
-    });
+    .map((p) => capturedPageToPage(p, "boilerplate"));
 }
+
+function layoutPages(layout: StoredLayout | null): Page[] {
+  if (!layout || layout.pages.length === 0) return [];
+  return [...layout.pages]
+    .sort((a, b) => a.order - b.order)
+    .map((p) => capturedPageToPage(p, "layout"));
+}
+
+// --- Handgebauter Blanko-Aufbau (Fallback ohne analysiertes Beispiel) ----
 
 let zCounter = 1;
 
@@ -296,11 +312,6 @@ export function createProject(
   };
 }
 
-// Eindeutiger Stempel einer gelernten Struktur (zum Abgleich mit dem Projekt).
-export function layoutStamp(layout: StoredLayout): string {
-  return `layout:${layout.createdAt}`;
-}
-
 // Kombinierter Stempel aus Struktur + Standardseiten. Aendert sich einer davon,
 // erkennt der Editor, dass eine neuere Vorlage vorliegt.
 export function projectStamp(
@@ -311,129 +322,17 @@ export function projectStamp(
   return `${l}|bp:${bp?.createdAt ?? 0}`;
 }
 
-// --- Projekt aus der KI-gelernten Struktur (Beispiel-Exposé) -------------
-
-function textElement(
-  text: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  opts: {
-    fontSize: number;
-    weight: number;
-    color: string;
-    align: "left" | "center" | "right";
-    kind: "heading" | "text";
-  },
-): TextElement {
-  return {
-    id: uid("el"),
-    kind: opts.kind,
-    x,
-    y,
-    w,
-    h,
-    z: zCounter++,
-    text,
-    fontSize: opts.fontSize,
-    align: opts.align,
-    color: opts.color,
-    background: "rgba(0,0,0,0)",
-    fontWeight: opts.weight,
-  };
-}
-
-function blocksToPage(
-  lp: LayoutPage,
-  logo: StoredFile | null,
-  accent: string,
-): Page {
-  zCounter = 1;
-  const elements: PageElement[] = [];
-  for (const b of lp.blocks) {
-    if (b.type === "image") {
-      elements.push(imageSlot(b.x, b.y, b.w, b.h));
-    } else if (b.type === "logo") {
-      if (logo) {
-        elements.push({
-          id: uid("el"),
-          kind: "logo",
-          x: b.x,
-          y: b.y,
-          w: b.w,
-          h: b.h,
-          z: 999,
-          src: logo.dataUrl,
-        });
-      } else {
-        elements.push(
-          textElement("LOGO", b.x, b.y, b.w, Math.max(b.h, 0.04), {
-            fontSize: 14,
-            weight: 700,
-            color: accent,
-            align: "left",
-            kind: "heading",
-          }),
-        );
-      }
-    } else if (b.type === "heading") {
-      // Schriftgroesse aus Blockhoehe ableiten.
-      const fs = Math.min(44, Math.max(13, Math.round(b.h * REF_H * 0.55)));
-      elements.push(
-        textElement(
-          b.text || "Überschrift",
-          b.x,
-          b.y,
-          b.w,
-          Math.max(b.h, 0.04),
-          {
-            fontSize: fs,
-            weight: 700,
-            color: "#1f2d3d",
-            align: b.align ?? "left",
-            kind: "heading",
-          },
-        ),
-      );
-    } else {
-      // text
-      elements.push(
-        textElement(
-          b.text || "Beschreibungstext – hier bearbeiten …",
-          b.x,
-          b.y,
-          b.w,
-          Math.max(b.h, 0.06),
-          {
-            fontSize: 14,
-            weight: 400,
-            color: "#5b6b7b",
-            align: b.align ?? "left",
-            kind: "text",
-          },
-        ),
-      );
-    }
-  }
-  return {
-    id: uid("pg"),
-    title: lp.title || "Seite",
-    background: "#ffffff",
-    elements,
-  };
-}
-
+// Projekt aus dem 1:1 uebernommenen Beispiel-Exposé (Inhaltsseiten) + den
+// globalen Standardseiten. Ohne analysierte Inhaltsseiten wird der
+// handgebaute Blanko-Aufbau als Startpunkt verwendet.
 export function createProjectFromLayout(
   type: ExposeType,
   layout: StoredLayout,
   logo: StoredFile | null,
   boilerplate: StoredBoilerplate | null = null,
 ): ExposeProject {
-  const accent = ACCENT[type];
-  const contentPages = layout.pages.map((lp) => blocksToPage(lp, logo, accent));
-  const base =
-    contentPages.length > 0 ? contentPages : createProject(type, logo).pages;
+  const captured = layoutPages(layout);
+  const base = captured.length > 0 ? captured : createProject(type, logo).pages;
   return {
     id: uid("proj"),
     type,
