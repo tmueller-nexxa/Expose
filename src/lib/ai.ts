@@ -537,13 +537,14 @@ export async function analyzeBoilerplatePhotos(
         const h = clamp01(Math.min(Number(r.h) * scale + MARGIN * 2, 1 - y), 0.03);
         return { x, y, w, h };
       })
-      // Nur nennenswert grosse, aber plausible Fotos: kleine Treffer sind
-      // wohl Logos/Icons. Breite Banner-Fotos (volle Seitenbreite, moderate
-      // Hoehe) sind normal und sollen erhalten bleiben - NUR ein Rechteck mit
-      // fast voller SEITENHOEHE (span von oben bis unten) und nennenswerter
-      // Breite ist typischerweise ein faelschlich erkanntes Hintergrund-/
-      // Dekor-Panel, kein echtes Foto (genau das beobachtete Fehlermuster).
-      .filter((r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.85 && r.w > 0.3));
+      // Nur nennenswert grosse Fotos (kleine Treffer sind wohl Logos/Icons).
+      // Die Unterscheidung "echtes grosses Foto" vs. "faelschlich erkanntes
+      // Hintergrundpanel" ueberlassen wir primaer dem Prompt (das Modell
+      // sieht die Pixel, eine reine Koordinaten-Heuristik nicht) - nur ein
+      // Rechteck, das PRAKTISCH die gesamte Seite bedeckt (>97% Hoehe UND
+      // Breite gleichzeitig, also randlos randlos ueber die volle Seite),
+      // gilt als eindeutiges Hintergrund-Artefakt und wird verworfen.
+      .filter((r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.97 && r.w > 0.97));
     return { ok: true, rects };
   } catch (err) {
     return { ok: false, message: (err as Error).message };

@@ -25,6 +25,7 @@ import {
   IconArrowLeft,
   IconCheck,
   IconDownload,
+  IconImage,
   IconSparkle,
   IconTrash,
 } from "../components/Icons";
@@ -248,6 +249,35 @@ export function EditorPage() {
     window.setTimeout(() => setToast(null), err ? 5000 : 3500);
   }
 
+  // Fuegt der aktuellen Seite manuell einen leeren Foto-Platzhalter hinzu -
+  // unabhaengig von der KI-Erkennung. Nuetzlich, wenn auf einer Standardseite
+  // (oder sonst wo) noch ein Foto sichtbar ist, das automatisch nicht erkannt
+  // wurde: Platzhalter hinzufuegen, dann per Maus ueber das Foto ziehen.
+  function addPlaceholder() {
+    const w = 0.4;
+    const h = 0.3;
+    const newEl: ImageElement = {
+      id: uid("el"),
+      kind: "image",
+      x: (1 - w) / 2,
+      y: (1 - h) / 2,
+      w,
+      h,
+      z: maxZ() + 1,
+      src: "",
+      fit: "cover",
+    };
+    const pageId = projectRef.current?.pages[pageIndex]?.id;
+    mutatePages((pages) =>
+      pages.map((pg) =>
+        pg.id === pageId ? { ...pg, elements: [...pg.elements, newEl] } : pg,
+      ),
+    );
+    setSelectedId(newEl.id);
+    setEditingId(null);
+    flash("Platzhalter hinzugefügt – per Maus über das Foto ziehen und in der Größe anpassen.");
+  }
+
   // --- Generieren --------------------------------------------------------
   async function handleGenerate() {
     const cur = projectRef.current;
@@ -451,6 +481,14 @@ export function EditorPage() {
           </span>
         )}
 
+        <button
+          className="btn btn-ghost"
+          onClick={addPlaceholder}
+          disabled={!!progress}
+          title="Leeren Foto-Platzhalter auf dieser Seite hinzufügen (z.B. über ein verbliebenes Foto ziehen)"
+        >
+          <IconImage size={18} /> Platzhalter
+        </button>
         <button
           className="btn btn-ghost"
           onClick={rebuildFromStructure}
