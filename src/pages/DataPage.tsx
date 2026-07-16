@@ -5,14 +5,16 @@ import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
   type BoilerplatePage,
-  type CapturedPage,
+  type DesignPage,
   type ExposeType,
+  type PageElement,
   type StoredFile,
   type StyleText,
 } from "../lib/types";
 import {
   aiReady,
-  analyzePagesRegions,
+  analyzePagesDesign,
+  analyzePagesPhotos,
   MAX_ANALYZE_PAGES,
   MODEL_OPTIONS,
   testApiKey,
@@ -46,7 +48,7 @@ export function DataPage() {
     { ok: boolean; msg: string } | null
   >(null);
   const [progress, setProgress] = useState<{
-    phase: "render" | "analyze" | "boiler" | "erase";
+    phase: "render" | "analyze" | "boiler";
     done: number;
     total: number;
   } | null>(null);
@@ -137,11 +139,12 @@ export function DataPage() {
       }
 
       // Standardseiten (Impressum/AGB/Widerruf/Kontakt) erkennen und abtrennen.
-      // ALLE Seiten werden 1:1 als Bild uebernommen (Design, Schrift, Icons,
-      // Farben, Groessen exakt wie im Original). Auf Standardseiten (ausser
-      // Kontakt) bleibt der Text vollstaendig erhalten - nur Fotos werden
-      // durch Platzhalter ersetzt. Auf Inhaltsseiten wird zusaetzlich der
-      // gesamte Text entfernt, da er objektspezifisch ist und neu erzeugt wird.
+      // Standardseiten werden 1:1 als Bild uebernommen (wortgetreuer,
+      // rechtssicherer Text bleibt erhalten, nur Fotos werden zu
+      // Platzhaltern). Inhaltsseiten bekommen KEIN eingebettetes Bild,
+      // sondern werden als editierbare Vektor-Grafik nachgebaut (Formen/
+      // Banner in Originalfarbe, Text-Stile ohne Originalinhalt, leere
+      // Fotoflaechen).
       const kinds = detectBoilerplate(
         pages.map((p) => ({ text: p.text, imageCount: p.imageCount })),
       );
@@ -162,38 +165,88 @@ export function DataPage() {
         }
       });
 
-      // Inhaltsseiten: Fotos + Text erkennen, beides aus dem Bild entfernen.
-      const capturedContent: CapturedPage[] = [];
+      // Inhaltsseiten: KEIN Bild uebernehmen - stattdessen den grafischen
+      // Aufbau (Formen/Banner in Originalfarbe, Text-Positionen/-Stile ohne
+      // Originalinhalt, Fotoflaechen leer) als editierbare Elemente
+      // nachbauen.
+      const capturedContent: DesignPage[] = [];
       if (contentPages.length > 0) {
         setProgress({ phase: "analyze", done: 0, total: contentPages.length });
-        const res = await analyzePagesRegions(
+        const res = await analyzePagesDesign(
           data.api,
           contentPages.map((p) => p.image),
-          true,
           (done, total) => setProgress({ phase: "analyze", done, total }),
         );
         if (!res.ok) {
           setAnalyzeMsg({ ok: false, msg: res.message });
           return;
         }
-        setProgress({ phase: "erase", done: 0, total: contentPages.length });
         for (let i = 0; i < contentPages.length; i++) {
           const cp = contentPages[i];
-          const regions = res.pages[i] ?? { photos: [], texts: [] };
-          const eraseRects = [...regions.photos, ...regions.texts];
-          const image =
-            eraseRects.length > 0
-              ? await eraseRegionsFromImage(cp.image, eraseRects)
-              : cp.image;
+          const design = res.pages[i] ?? { title: `Seite ${i + 1}`, background: "#ffffff", blocks: [] };
+          let z = 1;
+          const elements: PageElement[] = design.blocks.map((b) => {
+            if (b.type === "shape") {
+              return {
+                id: uid("el"),
+                kind: "shape",
+                x: b.x,
+                y: b.y,
+                w: b.w,
+                h: b.h,
+                z: z++,
+                color: b.color ?? "#e5e7eb",
+                radius: b.radius,
+              };
+            }
+            if (b.type === "image") {
+              return {
+                id: uid("el"),
+                kind: "image",
+                x: b.x,
+                y: b.y,
+                w: b.w,
+                h: b.h,
+                z: z++,
+                src: "",
+                fit: "cover",
+              };
+            }
+            if (b.type === "logo") {
+              return {
+                id: uid("el"),
+                kind: "logo",
+                x: b.x,
+                y: b.y,
+                w: b.w,
+                h: b.h,
+                z: 999,
+                src: "",
+              };
+            }
+            return {
+              id: uid("el"),
+              kind: b.type === "heading" ? "heading" : "text",
+              x: b.x,
+              y: b.y,
+              w: b.w,
+              h: b.h,
+              z: z++,
+              text: "",
+              fontSize: b.fontSize ?? (b.type === "heading" ? 26 : 15),
+              align: b.align ?? "left",
+              color: b.color ?? "#1f2d3d",
+              background: "rgba(0,0,0,0)",
+              fontWeight: b.fontWeight ?? (b.type === "heading" ? 700 : 400),
+            };
+          });
           capturedContent.push({
             id: uid("cp"),
-            title: `Seite ${i + 1}`,
-            image,
+            title: design.title || `Seite ${i + 1}`,
             order: cp.order,
-            photoSlots: regions.photos,
-            textSlots: regions.texts,
+            background: design.background,
+            elements,
           });
-          setProgress({ phase: "erase", done: i + 1, total: contentPages.length });
         }
         updateData((prev) => ({
           ...prev,
@@ -216,16 +269,15 @@ export function DataPage() {
       const needPhotos = boilerPages.filter((b) => b.kind !== "kontakt");
       if (needPhotos.length > 0) {
         setProgress({ phase: "boiler", done: 0, total: needPhotos.length });
-        const res = await analyzePagesRegions(
+        const res = await analyzePagesPhotos(
           data.api,
           needPhotos.map((b) => pages[b.order]?.image ?? b.image),
-          false,
         );
         if (res.ok) {
           for (let i = 0; i < needPhotos.length; i++) {
             const b = needPhotos[i];
             const src = pages[b.order]?.image ?? b.image;
-            const rects = res.pages[i]?.photos ?? [];
+            const rects = res.pages[i] ?? [];
             if (rects.length > 0) {
               b.photoSlots = rects;
               b.image = await eraseRegionsFromImage(src, rects);
@@ -430,13 +482,15 @@ export function DataPage() {
               <div>
                 <div className="lp-title">Seitenstruktur übernehmen</div>
                 <div className="lp-desc">
-                  Jede Seite wird <b>1:1</b> als Bild übernommen – Design,
-                  Schrift, Icons, Farben &amp; Größen exakt wie im Original.
-                  Standardseiten (Impressum, AGB, Widerruf, Kontakt) behalten
-                  ihren Text vollständig, auf Inhaltsseiten wird der
-                  objektspezifische Text entfernt. Objektfotos werden auf
-                  allen Seiten durch <b>Platzhalter</b> ersetzt (Kontakt
-                  behält sein Foto). Gilt für alle Exposé-Typen.
+                  Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, …)
+                  werden als <b>editierbare Grafik 1:1 nachgebaut</b> – Formen/
+                  Banner in Originalfarbe, Text in Originalgröße/-farbe/
+                  -ausrichtung, Bildflächen als leere Platzhalter (kein
+                  Originalfoto wird übernommen). Standardseiten (Impressum,
+                  AGB, Widerruf, Kontakt) bleiben <b>1:1 als Bildkopie</b> mit
+                  vollständigem, wortgetreuem Text – nur Fotos werden durch
+                  Platzhalter ersetzt (Kontakt behält sein Foto). Gilt für
+                  alle Exposé-Typen.
                 </div>
               </div>
               <button
@@ -457,9 +511,7 @@ export function DataPage() {
                     ? `Seiten werden gelesen … ${progress.done}/${progress.total || "…"}`
                     : progress.phase === "boiler"
                       ? `Standardseiten aufbereiten … ${progress.done}/${progress.total}`
-                      : progress.phase === "erase"
-                        ? `Fotos & Text entfernen … ${progress.done}/${progress.total} Seiten`
-                        : `KI analysiert … ${progress.done}/${progress.total} Seiten`}
+                      : `Grafik wird nachgebaut … ${progress.done}/${progress.total} Seiten`}
                 </div>
                 <div className="lp-progress-bar">
                   <div

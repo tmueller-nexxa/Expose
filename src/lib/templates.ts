@@ -1,14 +1,22 @@
 // Blanko-Vorlagen pro Expose-Typ.
 //
-// Sobald ein Beispiel-Exposé analysiert wurde, wird JEDE Seite 1:1 als Bild
-// uebernommen (Design, Schrift, Icons, Farben, Groessen - exakt wie im
-// Original). Erkannte Fotobereiche werden aus dem Bild entfernt und durch
-// Platzhalter ersetzt; bei Inhaltsseiten zusaetzlich der objektspezifische
-// Text. Ohne analysiertes Beispiel dient ein handgebauter Blanko-Aufbau als
-// Startpunkt (Bild-Platzhalter, die per Drag&Drop befuellt werden).
+// Standardseiten (Impressum/AGB/Widerruf/Kontakt) werden 1:1 als Bild
+// uebernommen - hier zaehlt der wortgetreue, rechtssichere Text mehr als
+// freie Bearbeitbarkeit; nur erkannte Fotobereiche werden aus dem Bild
+// entfernt und durch Platzhalter ersetzt.
+//
+// Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...)
+// werden dagegen OHNE eingebettetes Bild als editierbare Vektor-Elemente
+// nachgebaut: Formen/Banner in Originalfarbe, Text in Originalgroesse/
+// -farbe/-ausrichtung (Inhalt leer, wird pro Objekt neu geschrieben),
+// Bildflaechen als leere Platzhalter. So bleibt das Design exakt erhalten,
+// ohne ein Original-Foto zu uebernehmen oder eine Freistellung zu benoetigen.
+// Ohne analysiertes Beispiel dient ein handgebauter Blanko-Aufbau als
+// Startpunkt.
 
 import type {
-  CapturedPage,
+  CapturedImagePage,
+  DesignPage,
   ExposeProject,
   ExposeType,
   Page,
@@ -17,16 +25,12 @@ import type {
   StoredFile,
   StoredLayout,
 } from "./types";
-import { clamp, uid } from "./util";
-import { REF_H } from "../editor/constants";
+import { uid } from "./util";
 
-// Baut aus einer 1:1 uebernommenen Seite (Inhalts- oder Standardseite) ein
-// Page-Objekt: gesperrter Vollbild-Hintergrund + Foto-Platzhalter an den
-// erkannten (und aus dem Bild entfernten) Fotostellen.
-function capturedPageToPage(
-  p: CapturedPage,
-  source: "boilerplate" | "layout",
-): Page {
+// Baut aus einer 1:1 als Bild uebernommenen Standardseite ein Page-Objekt:
+// gesperrter Vollbild-Hintergrund + Foto-Platzhalter an den erkannten (und
+// aus dem Bild entfernten) Fotostellen.
+function boilerplatePageToPage(p: CapturedImagePage): Page {
   const elements: PageElement[] = [
     {
       id: uid("el"),
@@ -56,33 +60,12 @@ function capturedPageToPage(
       fit: "cover",
     });
   }
-  // Entfernte Textstellen (nur Inhaltsseiten) als leere, frei editierbare
-  // Textfelder wieder einsetzen - Position/Größe 1:1 wie im Original,
-  // Inhalt frei (neuer Objekttext statt des entfernten Originaltexts).
-  for (const slot of p.textSlots ?? []) {
-    const fontSize = Math.round(clamp(slot.h * REF_H * 0.5, 11, 42));
-    elements.push({
-      id: uid("el"),
-      kind: "text",
-      x: slot.x,
-      y: slot.y,
-      w: slot.w,
-      h: slot.h,
-      z: z++,
-      text: "",
-      fontSize,
-      align: "left",
-      color: "#1f2d3d",
-      background: "rgba(0,0,0,0)",
-      fontWeight: 400,
-    });
-  }
   return {
     id: uid("pg"),
     title: p.title,
     background: "#ffffff",
     elements,
-    sourcePage: { kind: source, id: p.id },
+    sourcePage: { kind: "boilerplate", id: p.id },
   };
 }
 
@@ -90,14 +73,31 @@ function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
   if (!bp || bp.pages.length === 0) return [];
   return [...bp.pages]
     .sort((a, b) => a.order - b.order)
-    .map((p) => capturedPageToPage(p, "boilerplate"));
+    .map((p) => boilerplatePageToPage(p));
 }
 
-function layoutPages(layout: StoredLayout | null): Page[] {
+// Baut aus einer 1:1 als Vektor-Elemente nachgebauten Inhaltsseite ein
+// Page-Objekt: frische Element-IDs, Logo-Platzhalter wird automatisch mit
+// dem hinterlegten Makler-Logo befuellt.
+function designPageToPage(p: DesignPage, logo: StoredFile | null): Page {
+  const elements: PageElement[] = p.elements.map((e) => {
+    const fresh = { ...e, id: uid("el") };
+    if (fresh.kind === "logo" && logo) fresh.src = logo.dataUrl;
+    return fresh;
+  });
+  return {
+    id: uid("pg"),
+    title: p.title,
+    background: p.background || "#ffffff",
+    elements,
+  };
+}
+
+function layoutPages(layout: StoredLayout | null, logo: StoredFile | null): Page[] {
   if (!layout || layout.pages.length === 0) return [];
   return [...layout.pages]
     .sort((a, b) => a.order - b.order)
-    .map((p) => capturedPageToPage(p, "layout"));
+    .map((p) => designPageToPage(p, logo));
 }
 
 // --- Handgebauter Blanko-Aufbau (Fallback ohne analysiertes Beispiel) ----
@@ -353,7 +353,7 @@ export function createProjectFromLayout(
   logo: StoredFile | null,
   boilerplate: StoredBoilerplate | null = null,
 ): ExposeProject {
-  const captured = layoutPages(layout);
+  const captured = layoutPages(layout, logo);
   const base = captured.length > 0 ? captured : createProject(type, logo).pages;
   return {
     id: uid("proj"),

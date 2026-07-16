@@ -7,6 +7,7 @@ import {
   type ExposeType,
   type ImageElement,
   type PageElement,
+  type ShapeElement,
   type TextElement,
 } from "../lib/types";
 import {
@@ -281,8 +282,9 @@ export function EditorPage() {
     );
 
     // Auch die GLOBALE Vorlage aktualisieren, sonst haette "Neu aufbauen"
-    // oder ein neu erstelltes Exposé eines anderen Typs wieder das
-    // Original-Foto (die globale Vorlage ist die Quelle beim Neuaufbau).
+    // wieder das Original-Foto (die globale Vorlage ist die Quelle beim
+    // Neuaufbau). Nur Standardseiten haben eine Bild-Quelle - Inhaltsseiten
+    // sind Vektor-Nachbauten ohne eingebettetes Foto.
     const source = pg.sourcePage;
     if (source?.kind === "boilerplate") {
       updateData((prev) => {
@@ -300,29 +302,6 @@ export function EditorPage() {
                   }
                 : bp,
             ),
-          },
-        };
-      });
-    } else if (source?.kind === "layout") {
-      updateData((prev) => {
-        const layout = prev.layouts[exType];
-        if (!layout) return prev;
-        return {
-          ...prev,
-          layouts: {
-            ...prev.layouts,
-            [exType]: {
-              ...layout,
-              pages: layout.pages.map((lp) =>
-                lp.id === source.id
-                  ? {
-                      ...lp,
-                      image: erased,
-                      photoSlots: [...(lp.photoSlots ?? []), rect],
-                    }
-                  : lp,
-              ),
-            },
           },
         };
       });
@@ -792,9 +771,22 @@ function Inspector({
   const isText = element.kind === "text" || element.kind === "heading";
   const t = element as TextElement;
   const img = element as ImageElement;
+  const shape = element as ShapeElement;
 
   return (
     <div className="inspector" onPointerDown={(e) => e.stopPropagation()}>
+      {element.kind === "shape" && (
+        <div className="grp">
+          <span className="lbl">Farbe</span>
+          <input
+            type="color"
+            className="color-input"
+            value={/^#[0-9a-fA-F]{6}$/.test(shape.color) ? shape.color : "#c8a04b"}
+            onChange={(e) => onPatch({ color: e.target.value } as Partial<ShapeElement>)}
+          />
+        </div>
+      )}
+
       {isText && (
         <>
           <div className="grp">

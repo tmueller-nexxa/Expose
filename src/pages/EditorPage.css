@@ -129,6 +129,18 @@
 .el-image {
   background: #f1f5f9;
 }
+.el-shape {
+  cursor: move;
+}
+.color-input {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #d8dee6;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
 /* Eigener, geclippter Innen-Wrapper statt overflow:hidden auf .el-image
    selbst - sonst wuerden die (leicht ueberstehenden) Resize-Griffe am
    Rand mit abgeschnitten und liessen sich nicht mehr anfassen. */

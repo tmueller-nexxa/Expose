@@ -67,13 +67,7 @@ export interface ApiSettings {
   model: string;
 }
 
-// --- Aus Beispiel-Exposés 1:1 uebernommene Seiten ------------------------
-//
-// Jede Seite eines Beispiel-Exposés wird komplett 1:1 als Bild uebernommen
-// (Design, Schrift, Icons, Farben, Groessen - exakt wie im Original). Nur
-// erkannte Bildbereiche (und bei Inhaltsseiten zusaetzlich Textbereiche)
-// werden aus dem Bild entfernt, damit sie durch neue Fotos/Texte ersetzt
-// werden koennen.
+// --- Aus Beispiel-Exposés uebernommene Seiten ----------------------------
 
 export interface Rect {
   x: number;
@@ -82,43 +76,50 @@ export interface Rect {
   h: number;
 }
 
-// Gemeinsame Basis fuer jede 1:1 uebernommene Seite.
-export interface CapturedPage {
+// Standardseiten (Impressum, AGB, Widerruf, Kontakt): komplett 1:1 als
+// Bild uebernommen (Design, Schrift, Icons, Farben, Groessen exakt wie im
+// Original) - hier zaehlt der wortgetreue, rechtssichere Text mehr als
+// freie Bearbeitbarkeit. Nur erkannte Fotobereiche werden aus dem Bild
+// entfernt und durch Platzhalter ersetzt (Kontakt behaelt sein Foto).
+export interface CapturedImagePage {
   id: string;
   title: string;
   image: string; // DataURL der Seitenkopie (Design/Schrift/Icons/Farben 1:1)
   order: number; // urspruengliche Seitenreihenfolge
-  // Fotobereiche, die aus dem Bild entfernt wurden und durch Platzhalter
-  // ersetzt werden (Anteile 0..1).
   photoSlots?: Rect[];
-  // Textbereiche, die aus dem Bild entfernt wurden (nur Inhaltsseiten) und
-  // durch leere, frei editierbare Textfelder ersetzt werden (Anteile 0..1).
-  textSlots?: Rect[];
 }
 
-// Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...):
-// zusaetzlich zu Fotos wird auch der objektspezifische Text entfernt, das
-// Design (Rahmen, Icons, Farben, statische Beschriftungen) bleibt 1:1.
-export interface StoredLayout {
-  pages: CapturedPage[];
-  source: string; // Name der analysierten Beispieldatei
-  pageCount: number;
-  createdAt: number;
-}
-
-// Standardseiten (Impressum, AGB, Widerruf, Kontakt), die 1:1 als exakte
-// Seitenkopie (Bild) uebernommen werden - gilt fuer ALLE Expose-Typen. Der
-// Text bleibt hier vollstaendig erhalten, nur Fotos werden zu Platzhaltern
-// (Kontakt behaelt sogar sein Foto = Makler-Portrait).
 export type BoilerplateKind = "impressum" | "agb" | "widerruf" | "kontakt";
 
-export interface BoilerplatePage extends CapturedPage {
+export interface BoilerplatePage extends CapturedImagePage {
   kind: BoilerplateKind;
 }
 
 export interface StoredBoilerplate {
   pages: BoilerplatePage[];
   source: string;
+  createdAt: number;
+}
+
+// Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...):
+// KEIN eingebettetes Bild - stattdessen wird der grafische Aufbau der
+// Originalseite 1:1 als editierbare Vektor-Elemente nachgebaut (Formen/
+// Banner in Originalfarbe, Text in Originalgroesse/-farbe/-ausrichtung,
+// Bildflaechen als leere, frei befuellbare Platzhalter). So bleibt das
+// Design exakt erhalten, ohne dass ein Original-Foto oder ein per
+// Freistellung beschaedigter Bildhintergrund uebernommen wird.
+export interface DesignPage {
+  id: string;
+  title: string;
+  order: number;
+  background: string; // Seiten-Hintergrundfarbe (Hex), 1:1 wie im Original
+  elements: PageElement[];
+}
+
+export interface StoredLayout {
+  pages: DesignPage[];
+  source: string; // Name der analysierten Beispieldatei
+  pageCount: number;
   createdAt: number;
 }
 
@@ -138,7 +139,7 @@ export interface AppData {
 
 // --- Editor / Dokument-Modell -------------------------------------------
 
-export type ElementKind = "image" | "text" | "logo" | "heading";
+export type ElementKind = "image" | "text" | "logo" | "heading" | "shape";
 
 export interface BaseElement {
   id: string;
@@ -184,21 +185,32 @@ export interface LogoElement extends BaseElement {
   src: string;
 }
 
+// Farbige Dekorationsflaeche (Banner, Balken, Kachel ...) - bildet die
+// grafischen Elemente einer Original-Vorlage 1:1 in Farbe/Position/Groesse
+// nach, ohne ein eingebettetes Foto zu sein.
+export interface ShapeElement extends BaseElement {
+  kind: "shape";
+  color: string; // Fuellfarbe (Hex/rgba)
+  radius?: number; // Eckenradius in px bei 794px Referenzbreite
+}
+
 export type PageElement =
   | ImageElement
   | TextElement
-  | LogoElement;
+  | LogoElement
+  | ShapeElement;
 
 export interface Page {
   id: string;
   title: string;
   background: string;
   elements: PageElement[];
-  // Bei 1:1 uebernommenen Seiten: Referenz auf die urspruengliche
-  // CapturedPage/BoilerplatePage.id, damit Aenderungen (z.B. Foto entfernen)
-  // auch in der gespeicherten Vorlage nachgezogen werden koennen.
-  // "boilerplate" -> AppData.boilerplate (global), "layout" -> AppData.layouts[type].
-  sourcePage?: { kind: "boilerplate" | "layout"; id: string };
+  // Bei 1:1 als Bild uebernommenen Standardseiten: Referenz auf die
+  // urspruengliche BoilerplatePage.id, damit Aenderungen (z.B. Foto
+  // entfernen) auch in AppData.boilerplate nachgezogen werden koennen.
+  // Inhaltsseiten (Vektor-Nachbau) haben keine Bild-Quelle und damit auch
+  // keine sourcePage.
+  sourcePage?: { kind: "boilerplate"; id: string };
 }
 
 export interface ExposeProject {

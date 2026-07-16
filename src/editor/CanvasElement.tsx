@@ -3,6 +3,7 @@ import type {
   ImageElement,
   LogoElement,
   PageElement,
+  ShapeElement,
   TextElement,
 } from "../lib/types";
 import { clamp } from "../lib/util";
@@ -121,6 +122,24 @@ export function CanvasElement(props: Props) {
       ))}
     </>
   );
+
+  // --- Formen/Banner (grafischer Nachbau, kein Foto) ---------------------
+  if (el.kind === "shape") {
+    const s = el as ShapeElement;
+    return (
+      <div
+        className={`el el-shape ${selected ? "selected" : ""}`}
+        style={{
+          ...style,
+          background: s.color,
+          borderRadius: (s.radius ?? 0) * scale,
+        }}
+        onPointerDown={onBodyDown}
+      >
+        {handles}
+      </div>
+    );
+  }
 
   // --- Image / Logo ------------------------------------------------------
   if (el.kind === "image" || el.kind === "logo") {
