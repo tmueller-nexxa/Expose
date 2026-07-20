@@ -7,13 +7,26 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
+// Liest die PDF-Bytes aus einer "data:"-URI ODER (bei in die Cloud
+// ausgelagerten Dateien, siehe cloud.ts/offloadBlobs) aus einer echten
+// https-URL (z.B. Firebase-Storage-Downloadlink) - StoredFile.dataUrl kann
+// nach einem Neuladen der Seite im Cloud-Modus beides sein.
+async function toBytes(dataUrl: string): Promise<Uint8Array> {
+  if (dataUrl.startsWith("data:")) {
+    const base64 = dataUrl.split(",")[1] ?? "";
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+  const res = await fetch(dataUrl);
+  if (!res.ok) throw new Error(`PDF-Download fehlgeschlagen (HTTP ${res.status})`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 export async function pdfFirstPageToImage(
   dataUrl: string,
   maxWidth = 900,
 ): Promise<string | null> {
   try {
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bytes = await toBytes(dataUrl);
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
@@ -42,8 +55,7 @@ export async function pdfAllPagesToImages(
 ): Promise<string[]> {
   const out: string[] = [];
   try {
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bytes = await toBytes(dataUrl);
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const count = Math.min(pdf.numPages, maxPages);
     onProgress?.(0, count);
@@ -85,8 +97,7 @@ export async function renderPdfPages(
 ): Promise<RenderedPage[]> {
   const out: RenderedPage[] = [];
   try {
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bytes = await toBytes(dataUrl);
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const count = Math.min(pdf.numPages, maxPages);
     onProgress?.(0, count);
@@ -149,8 +160,7 @@ export async function renderPdfPages(
 
 export async function pdfPageCount(dataUrl: string): Promise<number> {
   try {
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bytes = await toBytes(dataUrl);
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     return pdf.numPages;
   } catch {

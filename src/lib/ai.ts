@@ -184,7 +184,7 @@ export async function generateImageText(
   type: ExposeType,
   styleTexts: StyleText[],
 ): Promise<ImageTextResult | AiError> {
-  const { mediaType, base64 } = splitDataUrl(imageDataUrl);
+  const { mediaType, base64 } = await splitDataUrl(imageDataUrl);
   if (!base64) return { ok: false, message: "Bild konnte nicht gelesen werden." };
   if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
 
@@ -311,13 +311,15 @@ async function analyzePhotosChunk(
   api: ApiSettings,
   chunk: string[],
 ): Promise<Rect[][] | AiError> {
-  const imageBlocks = chunk.map((dataUrl) => {
-    const { mediaType, base64 } = splitDataUrl(dataUrl);
-    return {
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: mediaType, data: base64 },
-    };
-  });
+  const imageBlocks = await Promise.all(
+    chunk.map(async (dataUrl) => {
+      const { mediaType, base64 } = await splitDataUrl(dataUrl);
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mediaType, data: base64 },
+      };
+    }),
+  );
 
   const system =
     "Du erkennst auf Immobilien-Exposé-Seiten ausschliesslich echte, austauschbare Fotografien (Raeume, Gebaeude, Personen, Landschaften). " +
@@ -532,13 +534,15 @@ async function analyzeDesignChunk(
   api: ApiSettings,
   chunk: string[],
 ): Promise<DesignPageResult[] | AiError> {
-  const imageBlocks = chunk.map((dataUrl) => {
-    const { mediaType, base64 } = splitDataUrl(dataUrl);
-    return {
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: mediaType, data: base64 },
-    };
-  });
+  const imageBlocks = await Promise.all(
+    chunk.map(async (dataUrl) => {
+      const { mediaType, base64 } = await splitDataUrl(dataUrl);
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mediaType, data: base64 },
+      };
+    }),
+  );
 
   const system =
     "Du bist Experte fuer die pixelgenaue Grafik-Analyse von Immobilien-Exposé-Seiten. " +
@@ -740,13 +744,15 @@ export async function analyzeExposeStructure(
     return { ok: false, message: "Keine Inhaltsseiten im Beispiel gefunden." };
 
   const imgs = pageImages.slice(0, 20);
-  const imageBlocks = imgs.map((dataUrl) => {
-    const { mediaType, base64 } = splitDataUrl(dataUrl);
-    return {
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: mediaType, data: base64 },
-    };
-  });
+  const imageBlocks = await Promise.all(
+    imgs.map(async (dataUrl) => {
+      const { mediaType, base64 } = await splitDataUrl(dataUrl);
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mediaType, data: base64 },
+      };
+    }),
+  );
 
   const system =
     `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
@@ -833,13 +839,15 @@ async function analyzePhotoSectionsChunk(
   chunk: string[],
   availableKinds: ExposeSectionKind[],
 ): Promise<PhotoAssignment[] | AiError> {
-  const imageBlocks = chunk.map((dataUrl) => {
-    const { mediaType, base64 } = splitDataUrl(dataUrl);
-    return {
-      type: "image" as const,
-      source: { type: "base64" as const, media_type: mediaType, data: base64 },
-    };
-  });
+  const imageBlocks = await Promise.all(
+    chunk.map(async (dataUrl) => {
+      const { mediaType, base64 } = await splitDataUrl(dataUrl);
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mediaType, data: base64 },
+      };
+    }),
+  );
 
   const system =
     "Du ordnest Immobilienfotos den Seitenabschnitten eines Exposés zu. " +
