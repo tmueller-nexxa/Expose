@@ -89,7 +89,12 @@ export interface CapturedImagePage {
   photoSlots?: Rect[];
 }
 
-export type BoilerplateKind = "impressum" | "agb" | "widerruf" | "kontakt";
+export type BoilerplateKind =
+  | "vorwort"
+  | "impressum"
+  | "agb"
+  | "widerruf"
+  | "kontakt";
 
 export interface BoilerplatePage extends CapturedImagePage {
   kind: BoilerplateKind;

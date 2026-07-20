@@ -502,8 +502,8 @@ export function DataPage() {
                   (kein Originalfoto wird übernommen). Text auf farbigen
                   Bannern/Kacheln (z. B. Rubriken-Label) wird <b>1:1
                   übernommen</b>, freier Fließtext bleibt leer und wird pro
-                  Objekt neu eingegeben. Standardseiten (Impressum, AGB,
-                  Widerruf, Kontakt) bleiben <b>1:1 als Bildkopie</b> mit
+                  Objekt neu eingegeben. Standardseiten (Vorwort, Impressum,
+                  AGB, Widerruf, Kontakt) bleiben <b>1:1 als Bildkopie</b> mit
                   vollständigem, wortgetreuem Text – nur Fotos werden durch
                   Platzhalter ersetzt (Kontakt behält sein Foto). Gilt für
                   alle Exposé-Typen.
