@@ -128,6 +128,39 @@ export interface StoredLayout {
   createdAt: number;
 }
 
+// --- "KI Exposé": komplett automatisch generiertes Exposé ---------------
+//
+// Der Nutzer laedt nur Rohmaterial hoch (Fotos + Datenblaetter) - die KI
+// ordnet die Fotos eigenstaendig passenden Seiten zu und schreibt die
+// Texte. Der SEITENAUFBAU (Reihenfolge/Zweck, keine Farben/Grafiken) wird
+// dabei aus den Beispiel-Exposés im Datenbereich abgeleitet; das grafische
+// Design ist ein fest hinterlegtes, einheitliches Luxus-Design (siehe
+// luxuryTemplate.ts) - unabhaengig von den Beispielen.
+
+export type ExposeSectionKind =
+  | "titel"
+  | "objektbeschreibung"
+  | "lage"
+  | "ausstattung"
+  | "grundriss"
+  | "galerie"
+  | "kontakt"
+  | "sonstiges";
+
+export interface ExposeSection {
+  kind: ExposeSectionKind;
+  title: string; // Anzeigename, z.B. "Lage & Umgebung"
+  photoCount: number; // typische Fotoanzahl auf dieser Seite im Beispiel
+}
+
+// Schlanker, wiederverwendbarer Seitenaufbau pro Typ - bleibt erhalten, bis
+// der Nutzer ihn ueber "Neu generieren" ersetzt (mit Rueckgaengig-Option).
+export interface KiExposeStructure {
+  sections: ExposeSection[];
+  source: string; // Name der analysierten Beispieldatei(en)
+  createdAt: number;
+}
+
 // Persistente Nutzerdaten (Uploads, Keys ...).
 export interface AppData {
   examples: Record<ExposeType, StoredFile[]>;
@@ -140,6 +173,12 @@ export interface AppData {
   layouts: Record<ExposeType, StoredLayout | null>;
   // Global: 1:1 uebernommene Standardseiten (fuer alle Typen).
   boilerplate: StoredBoilerplate | null;
+  // "KI Exposé": Rohmaterial (Fotos/Datenblaetter) pro Typ, dauerhaft.
+  kiExposeFiles: Record<ExposeType, StoredFile[]>;
+  // "KI Exposé": abgeleiteter Seitenaufbau pro Typ + vorherige Version fuer
+  // "Rueckgaengig" nach einer Neu-Generierung.
+  kiExposeStructure: Record<ExposeType, KiExposeStructure | null>;
+  kiExposeStructurePrevious: Record<ExposeType, KiExposeStructure | null>;
 }
 
 // --- Editor / Dokument-Modell -------------------------------------------
@@ -188,6 +227,9 @@ export interface TextElement extends BaseElement {
   color: string;
   background: string; // rgba - halbtransparente Flaeche
   fontWeight: number;
+  // Optionale abweichende Schriftart (CSS font-family), z.B. eine Serife
+  // fuer Luxus-Ueberschriften. Ohne Angabe wird die Standardschrift geerbt.
+  fontFamily?: string;
   // Verweist auf das Bild, zu dem der Text generiert wurde.
   linkedImageId?: string;
   generated?: boolean;

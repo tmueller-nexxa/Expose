@@ -73,7 +73,7 @@ function boilerplatePageToPage(p: CapturedImagePage): Page {
   };
 }
 
-function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
+export function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
   if (!bp || bp.pages.length === 0) return [];
   return [...bp.pages]
     .sort((a, b) => a.order - b.order)

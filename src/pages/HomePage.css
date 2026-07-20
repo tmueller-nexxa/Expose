@@ -196,6 +196,64 @@
 .setup-item.done {
   color: var(--text);
 }
+.ki-expose-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 18px 22px;
+  border-radius: var(--radius);
+  margin-bottom: 26px;
+  border: 1px solid #3a3120;
+  background: linear-gradient(120deg, #21201a, #2c2415 70%);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-sm);
+}
+.ki-expose-banner:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.keb-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(169, 130, 47, 0.18);
+  color: #d3ac5c;
+}
+.keb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.keb-title {
+  color: #f3ead9;
+  font-weight: 700;
+  font-size: 15px;
+}
+.keb-desc {
+  color: #c9bfa8;
+  font-size: 13px;
+}
+.keb-go {
+  flex-shrink: 0;
+  color: #d3ac5c;
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+@media (max-width: 680px) {
+  .keb-desc {
+    display: none;
+  }
+}
+
 .setup-item.done .tick {
   background: #ecfdf5;
   color: var(--success);

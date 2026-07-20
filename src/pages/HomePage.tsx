@@ -8,6 +8,7 @@ import {
   IconCheck,
   IconHome,
   IconShop,
+  IconSparkle,
 } from "../components/Icons";
 import {
   ApartmentScene,
@@ -90,6 +91,20 @@ export function HomePage() {
             Datenbereich öffnen
           </button>
         </div>
+
+        <button className="ki-expose-banner" onClick={() => navigate("/ki-expose")}>
+          <span className="keb-icon">
+            <IconSparkle size={22} />
+          </span>
+          <span className="keb-body">
+            <span className="keb-title">Neu: KI Exposé</span>
+            <span className="keb-desc">
+              Fotos &amp; Datenblätter hochladen – die KI ordnet sie zu, schreibt die Texte und
+              gestaltet ein komplett neues, hochwertiges Exposé.
+            </span>
+          </span>
+          <span className="keb-go">Jetzt starten →</span>
+        </button>
 
         <div className="type-grid">
           {EXPOSE_TYPES.map((t) => {

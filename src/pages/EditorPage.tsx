@@ -121,7 +121,10 @@ export function EditorPage() {
       let updateHint = false;
 
       // Neuere gelernte Struktur / Standardseiten als das gespeicherte Projekt?
-      if (existing && existing.builtFrom !== stamp && (layout || bp)) {
+      // "KI Exposé"-Projekte sind bewusst NICHT aus layout/bp abgeleitet
+      // (eigenes Luxus-Design) - der Hinweis waere hier irrefuehrend.
+      const isKiExpose = existing?.builtFrom?.startsWith("ki-expose") ?? false;
+      if (existing && !isKiExpose && existing.builtFrom !== stamp && (layout || bp)) {
         if (!hasPlacedImages(existing)) {
           // Noch keine Bilder platziert -> neue Vorlage direkt uebernehmen.
           proj = fresh;
@@ -200,7 +203,7 @@ export function EditorPage() {
       }
       const merged = { ...el, ...patch };
       if (merged.text.trim()) {
-        const needed = fitTextBoxHeight(merged.text, merged.w, merged.fontSize, merged.fontWeight);
+        const needed = fitTextBoxHeight(merged.text, merged.w, merged.fontSize, merged.fontWeight, merged.fontFamily);
         if (needed > merged.h) {
           patch = { ...patch, h: Math.min(needed, 1 - merged.y) };
         }

@@ -140,6 +140,24 @@ export function emptyAppData(): AppData {
       gewerbe: null,
     },
     boilerplate: null,
+    kiExposeFiles: {
+      einfamilienhaus: [],
+      wohnung: [],
+      mehrfamilienhaus: [],
+      gewerbe: [],
+    },
+    kiExposeStructure: {
+      einfamilienhaus: null,
+      wohnung: null,
+      mehrfamilienhaus: null,
+      gewerbe: null,
+    },
+    kiExposeStructurePrevious: {
+      einfamilienhaus: null,
+      wohnung: null,
+      mehrfamilienhaus: null,
+      gewerbe: null,
+    },
   };
 }
 
@@ -151,6 +169,12 @@ function mergeAppData(stored: AppData): AppData {
     examples: { ...base.examples, ...stored.examples },
     api: { ...base.api, ...stored.api },
     layouts: { ...base.layouts, ...stored.layouts },
+    kiExposeFiles: { ...base.kiExposeFiles, ...stored.kiExposeFiles },
+    kiExposeStructure: { ...base.kiExposeStructure, ...stored.kiExposeStructure },
+    kiExposeStructurePrevious: {
+      ...base.kiExposeStructurePrevious,
+      ...stored.kiExposeStructurePrevious,
+    },
   };
 }
 

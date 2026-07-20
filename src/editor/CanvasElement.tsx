@@ -156,7 +156,7 @@ export function CanvasElement(props: Props) {
       // waere Schrift durch overflow:hidden abgeschnitten.
       if ((el.kind === "text" || el.kind === "heading") && (el as TextElement).text.trim()) {
         const t = el as TextElement;
-        const minH = fitTextBoxHeight(t.text, w, t.fontSize, t.fontWeight);
+        const minH = fitTextBoxHeight(t.text, w, t.fontSize, t.fontWeight, t.fontFamily);
         if (h < minH) {
           if (corner.includes("n")) {
             // Nur die Oberkante bewegt sich - Unterkante fix halten.
@@ -302,6 +302,7 @@ export function CanvasElement(props: Props) {
           style={{
             fontSize: t.fontSize * scale,
             fontWeight: t.fontWeight,
+            fontFamily: t.fontFamily,
             textAlign: t.align,
             lineHeight: 1.35,
           }}
@@ -316,6 +317,7 @@ export function CanvasElement(props: Props) {
           style={{
             fontSize: t.fontSize * scale,
             fontWeight: t.fontWeight,
+            fontFamily: t.fontFamily,
             textAlign: t.align,
             lineHeight: 1.35,
           }}

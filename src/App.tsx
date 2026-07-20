@@ -3,6 +3,7 @@ import { useApp } from "./context/AppContext";
 import { LoginPage } from "./pages/LoginPage";
 import { HomePage } from "./pages/HomePage";
 import { DataPage } from "./pages/DataPage";
+import { KiExposePage } from "./pages/KiExposePage";
 import { EditorPage } from "./pages/EditorPage";
 import type { ReactNode } from "react";
 
@@ -53,6 +54,14 @@ export default function App() {
           element={
             <RequireAuth>
               <DataPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/ki-expose"
+          element={
+            <RequireAuth>
+              <KiExposePage />
             </RequireAuth>
           }
         />

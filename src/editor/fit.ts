@@ -18,9 +18,10 @@ function wrapLines(
   fontPx: number,
   weight: number,
   maxWidth: number,
+  fontFamily = "Inter, system-ui, sans-serif",
 ): number {
   const c = measureCtx();
-  c.font = `${weight} ${fontPx}px Inter, system-ui, sans-serif`;
+  c.font = `${weight} ${fontPx}px ${fontFamily}`;
   let lines = 0;
   for (const paragraph of text.split("\n")) {
     const words = paragraph.split(/\s+/).filter(Boolean);
@@ -81,12 +82,13 @@ export function fitTextBoxHeight(
   boxWFrac: number,
   fontSize: number,
   weight = 400,
+  fontFamily?: string,
 ): number {
   const boxW = boxWFrac * REF_W;
   const padV = Math.max(3, fontSize * 0.35);
   const padH = padV * 1.2;
   const innerW = Math.max(10, boxW - padH * 2);
-  const lines = Math.max(1, wrapLines(text, fontSize, weight, innerW));
+  const lines = Math.max(1, wrapLines(text, fontSize, weight, innerW, fontFamily));
   const heightPx = lines * fontSize * 1.35 + padV * 2;
   return heightPx / REF_H;
 }

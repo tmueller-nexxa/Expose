@@ -1,0 +1,9 @@
+.ki-upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-left: 0;
+}
+.ki-folder-btn {
+  align-self: flex-start;
+}

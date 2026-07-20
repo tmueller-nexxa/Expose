@@ -7,7 +7,14 @@
 //  - Direkt (kein Proxy konfiguriert): Aufruf laeuft direkt aus dem Browser
 //    mit dem vom Makler im Datenbereich hinterlegten API-Key (lokaler Modus).
 
-import type { ApiSettings, ExposeType, Rect, StyleText } from "./types";
+import type {
+  ApiSettings,
+  ExposeSection,
+  ExposeSectionKind,
+  ExposeType,
+  Rect,
+  StyleText,
+} from "./types";
 import { clamp, splitDataUrl } from "./util";
 import { aiProxyUrl } from "../firebase.config";
 import { currentToken } from "./cloud";
@@ -670,6 +677,348 @@ export async function analyzePagesDesign(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// --- "KI Exposé": Seitenaufbau aus Beispielen ableiten -------------------
+//
+// Anders als die Vektor-Grafik-Nachbildung (oben) wird hier NUR der grobe,
+// wiederkehrende Seitenaufbau beschrieben (Reihenfolge/Zweck der Inhalts-
+// seiten) - keine Farben, Texte oder Positionen. Das grafische Design von
+// "KI Exposé" ist ein fest hinterlegtes Luxus-Design (luxuryTemplate.ts),
+// unabhaengig von den Beispielen.
+
+const SECTION_KINDS = [
+  "titel",
+  "objektbeschreibung",
+  "lage",
+  "ausstattung",
+  "grundriss",
+  "galerie",
+  "kontakt",
+  "sonstiges",
+] as const;
+const SECTION_KIND_SET = new Set<string>(SECTION_KINDS);
+
+const STRUCTURE_TOOL = {
+  name: "expose_structure",
+  description:
+    "Beschreibt NUR den groben, wiederkehrenden Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen.",
+  input_schema: {
+    type: "object",
+    properties: {
+      sections: {
+        type: "array",
+        description: "Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen.",
+        items: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: [...SECTION_KINDS] },
+            title: {
+              type: "string",
+              description: "Anzeigename des Abschnitts, z.B. \"Lage & Umgebung\".",
+            },
+            photoCount: {
+              type: "number",
+              description: "Typische Anzahl Fotos auf dieser Seite im Beispiel.",
+            },
+          },
+          required: ["kind", "title"],
+        },
+      },
+    },
+    required: ["sections"],
+  },
+};
+
+export async function analyzeExposeStructure(
+  api: ApiSettings,
+  pageImages: string[],
+  type: ExposeType,
+): Promise<{ ok: true; sections: ExposeSection[] } | AiError> {
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (pageImages.length === 0)
+    return { ok: false, message: "Keine Inhaltsseiten im Beispiel gefunden." };
+
+  const imgs = pageImages.slice(0, 20);
+  const imageBlocks = imgs.map((dataUrl) => {
+    const { mediaType, base64 } = splitDataUrl(dataUrl);
+    return {
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: mediaType, data: base64 },
+    };
+  });
+
+  const system =
+    `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
+    "Beschreibe NUR die grobe, wiederkehrende Struktur: welche Arten von Inhaltsseiten kommen in welcher Reihenfolge vor (z.B. Titelseite, Objektbeschreibung, Lage, Ausstattung, Grundriss, Galerie, Kontakt)? " +
+    "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. Fasse inhaltlich aehnliche Seiten sinnvoll zu einem Abschnitt zusammen. " +
+    "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
+
+  try {
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 1500,
+      system,
+      tools: [STRUCTURE_TOOL],
+      tool_choice: { type: "tool", name: "expose_structure" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...imageBlocks,
+            {
+              type: "text",
+              text: `Hier sind ${imgs.length} Inhaltsseite(n) eines Beispiel-Exposés. Beschreibe den groben Seitenaufbau.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as
+      | { sections?: { kind?: string; title?: string; photoCount?: number }[] }
+      | undefined;
+    const raw = input?.sections ?? [];
+    if (raw.length === 0)
+      return { ok: false, message: "Die KI konnte keinen Seitenaufbau ableiten." };
+
+    const sections: ExposeSection[] = raw.slice(0, 20).map((s) => ({
+      kind: (SECTION_KIND_SET.has(String(s.kind)) ? s.kind : "sonstiges") as ExposeSectionKind,
+      title: String(s.title ?? "Abschnitt").slice(0, 60),
+      photoCount: clamp(Math.round(Number(s.photoCount) || 1), 0, 6),
+    }));
+    return { ok: true, sections };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
+// --- "KI Exposé": Fotos den Seitenabschnitten zuordnen --------------------
+
+export interface PhotoAssignment {
+  section: ExposeSectionKind;
+  caption: string;
+}
+
+const PHOTO_SECTION_TOOL = {
+  name: "photo_sections",
+  description:
+    "Ordnet jedes Foto einem passenden Seitenabschnitt zu und beschreibt kurz, was zu sehen ist.",
+  input_schema: {
+    type: "object",
+    properties: {
+      photos: {
+        type: "array",
+        description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Fotos, eines pro Bild.",
+        items: {
+          type: "object",
+          properties: {
+            section: { type: "string", enum: [...SECTION_KINDS] },
+            caption: {
+              type: "string",
+              description: "Sachliche Kurzbeschreibung des Fotoinhalts (max. 12 Woerter), z.B. Raumart/Ansicht.",
+            },
+          },
+          required: ["section", "caption"],
+        },
+      },
+    },
+    required: ["photos"],
+  },
+};
+
+async function analyzePhotoSectionsChunk(
+  api: ApiSettings,
+  chunk: string[],
+  availableKinds: ExposeSectionKind[],
+): Promise<PhotoAssignment[] | AiError> {
+  const imageBlocks = chunk.map((dataUrl) => {
+    const { mediaType, base64 } = splitDataUrl(dataUrl);
+    return {
+      type: "image" as const,
+      source: { type: "base64" as const, media_type: mediaType, data: base64 },
+    };
+  });
+
+  const system =
+    "Du ordnest Immobilienfotos den Seitenabschnitten eines Exposés zu. " +
+    `In diesem Exposé kommen folgende Abschnitte vor: ${availableKinds.join(", ")}. ` +
+    "Waehle pro Foto den inhaltlich passendsten Abschnitt (z.B. Aussenansicht/Fassade -> titel, Innenraeume -> objektbeschreibung oder ausstattung, Karte/Umgebung/Strassenansicht -> lage, Grundriss-Zeichnung -> grundriss, sonst galerie oder sonstiges). " +
+    "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
+    "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
+
+  const data = await callAnthropic(api, {
+    model: api.model,
+    max_tokens: 1500,
+    system,
+    tools: [PHOTO_SECTION_TOOL],
+    tool_choice: { type: "tool", name: "photo_sections" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...imageBlocks,
+          {
+            type: "text",
+            text: `Hier sind ${imageBlocks.length} Foto(s). Ordne jedes Foto einem Abschnitt zu.`,
+          },
+        ],
+      },
+    ],
+  });
+
+  const tool = data.content.find((c) => c.type === "tool_use");
+  const input = tool?.input as { photos?: { section?: string; caption?: string }[] } | undefined;
+  if (!input?.photos) return { ok: false, message: "Die KI konnte die Fotos nicht zuordnen." };
+
+  const photos = input.photos.slice(0, chunk.length);
+  while (photos.length < chunk.length) photos.push({ section: "sonstiges", caption: "" });
+
+  return photos.map((p) => ({
+    section: (SECTION_KIND_SET.has(String(p.section)) ? p.section : "sonstiges") as ExposeSectionKind,
+    caption: String(p.caption ?? "").slice(0, 140),
+  }));
+}
+
+export async function analyzePhotoSections(
+  api: ApiSettings,
+  photos: string[],
+  availableKinds: ExposeSectionKind[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ ok: true; photos: PhotoAssignment[] } | AiError> {
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (photos.length === 0) return { ok: false, message: "Keine Fotos zum Zuordnen gefunden." };
+
+  const imgs = photos.slice(0, 60);
+  const total = imgs.length;
+  const BATCH = 4;
+  const allPhotos: PhotoAssignment[] = [];
+  let firstError = "";
+  let done = 0;
+  onProgress?.(0, total);
+
+  for (let start = 0; start < imgs.length; start += BATCH) {
+    const chunk = imgs.slice(start, start + BATCH);
+    let result: PhotoAssignment[] | null = null;
+    let err = "";
+    for (let attempt = 1; attempt <= 3 && !result; attempt++) {
+      try {
+        const res = await analyzePhotoSectionsChunk(api, chunk, availableKinds);
+        if (Array.isArray(res)) {
+          result = res;
+        } else {
+          err = res.message;
+        }
+      } catch (e) {
+        err = (e as Error).message;
+      }
+      if (!result && attempt < 3) await sleep(800 * attempt);
+    }
+    if (result) {
+      allPhotos.push(...result);
+    } else {
+      firstError = firstError || err || "unbekannt";
+      for (let i = 0; i < chunk.length; i++) allPhotos.push({ section: "sonstiges", caption: "" });
+    }
+    done += chunk.length;
+    onProgress?.(done, total);
+  }
+
+  if (allPhotos.every((p) => !p.caption) && firstError) {
+    return { ok: false, message: firstError };
+  }
+  return { ok: true, photos: allPhotos };
+}
+
+// --- "KI Exposé": Abschnittstexte schreiben --------------------------------
+
+export interface SectionText {
+  headline: string;
+  text: string;
+}
+
+const SECTION_TEXT_TOOL = {
+  name: "expose_section_texts",
+  description: "Schreibt fuer jeden Expose-Abschnitt eine Ueberschrift und einen Marketingtext.",
+  input_schema: {
+    type: "object",
+    properties: {
+      sections: {
+        type: "array",
+        description: "Ein Eintrag pro vorgegebenem Abschnitt, in derselben Reihenfolge.",
+        items: {
+          type: "object",
+          properties: {
+            headline: { type: "string", description: "Kurze, praegnante Abschnittsueberschrift." },
+            text: {
+              type: "string",
+              description: "2-5 Saetze Marketingtext im vorgegebenen Schreibstil, basierend auf den beschriebenen Fotos und Objektdaten.",
+            },
+          },
+          required: ["headline", "text"],
+        },
+      },
+    },
+    required: ["sections"],
+  },
+};
+
+export async function writeExposeSectionTexts(
+  api: ApiSettings,
+  type: ExposeType,
+  sections: ExposeSection[],
+  photoDescriptionsBySection: string[][],
+  datasheetText: string,
+  styleTexts: StyleText[],
+): Promise<{ ok: true; texts: SectionText[] } | AiError> {
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (sections.length === 0) return { ok: false, message: "Kein Seitenaufbau vorhanden." };
+
+  const sectionsDesc = sections
+    .map((s, i) => {
+      const photos = photoDescriptionsBySection[i]?.filter(Boolean) ?? [];
+      return `${i + 1}. "${s.title}" (${s.kind}): Fotos zeigen: ${
+        photos.length > 0 ? photos.join("; ") : "keine zugeordneten Fotos"
+      }`;
+    })
+    .join("\n");
+
+  const system =
+    `Du bist ein erfahrener Immobilien-Texter fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(styleTexts)}\n\n` +
+    "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts und (falls vorhanden) den folgenden Objektdaten aus hochgeladenen Datenblaettern:\n\n" +
+    `${datasheetText.trim().slice(0, 6000) || "(keine Datenblaetter hochgeladen)"}\n\n` +
+    "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
+    "Antworte ausschliesslich ueber das Werkzeug \"expose_section_texts\" mit GENAU einem Eintrag pro Abschnitt, in der vorgegebenen Reihenfolge.";
+
+  try {
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 3000,
+      system,
+      tools: [SECTION_TEXT_TOOL],
+      tool_choice: { type: "tool", name: "expose_section_texts" },
+      messages: [{ role: "user", content: `Abschnitte:\n${sectionsDesc}` }],
+    });
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as { sections?: { headline?: string; text?: string }[] } | undefined;
+    const raw = input?.sections ?? [];
+    if (raw.length === 0) return { ok: false, message: "Die KI konnte keine Texte erzeugen." };
+
+    const texts = raw.slice(0, sections.length);
+    while (texts.length < sections.length) texts.push({ headline: "", text: "" });
+
+    return {
+      ok: true,
+      texts: texts.map((t) => ({
+        headline: String(t.headline ?? "").trim(),
+        text: String(t.text ?? "").trim(),
+      })),
+    };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
 }
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.
