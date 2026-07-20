@@ -1,10 +1,10 @@
 // "KI Exposé": ein fest hinterlegtes, hochwertiges Luxus-Design - bewusst
 // NICHT aus den Beispiel-Exposés kopiert (nur deren grober Seitenaufbau
-// fliesst ein, siehe ai.ts/analyzeExposeStructure). Elegante Serifen-
-// Überschriften, ruhige Farbpalette, grosszügige Weissräume. Die KI liefert
-// pro Abschnitt bereits zugeordnete Fotos + fertige Texte (siehe
-// KiExposePage.tsx) - hier werden daraus nur noch die Page/PageElement-
-// Objekte gebaut.
+// fliesst ein, siehe ai.ts/analyzeExposeStructure). Schwungvolle Schreib-
+// schrift-Überschriften (Tangerine), ruhige Farbpalette, grosszügige
+// Weissräume. Die KI liefert pro Abschnitt bereits zugeordnete Fotos +
+// fertige Texte (siehe KiExposePage.tsx) - hier werden daraus nur noch die
+// Page/PageElement-Objekte gebaut.
 
 import type {
   ExposeSection,
@@ -15,6 +15,7 @@ import type {
   StoredFile,
 } from "./types";
 import { uid } from "./util";
+import { fitTextBoxHeight } from "../editor/fit";
 
 // --- Design-Sprache --------------------------------------------------------
 
@@ -23,7 +24,11 @@ const MUTED = "#6b6459";
 const GOLD = "#a9822f";
 const CREAM = "#faf7f1";
 const WHITE = "#ffffff";
-const SERIF = "'Playfair Display', Georgia, 'Times New Roman', serif";
+// Schwungschrift - bei gleicher px-Groesse optisch deutlich kleiner als eine
+// gewoehnliche Serife, darum bei allen Verwendungsstellen entsprechend groesser
+// dimensioniert (siehe SCRIPT_SCALE).
+const SERIF = "'Tangerine', Georgia, 'Times New Roman', serif";
+const SCRIPT_SCALE = 1.6;
 
 const MARGIN = 0.09;
 const CONTENT_W = 1 - MARGIN * 2;
@@ -38,16 +43,21 @@ function heading(
   h: number,
   opts: Partial<{ fontSize: number; align: "left" | "center" | "right"; color: string }> = {},
 ): PageElement {
+  const fontSize = opts.fontSize ?? Math.round(30 * SCRIPT_SCALE);
+  // Sicherheitsnetz: die Schwungschrift braucht bei gleicher px-Groesse mehr
+  // Zeilenhoehe als eine gewoehnliche Serife - Box notfalls vergroessern,
+  // damit nichts abgeschnitten wird.
+  const minH = text.trim() ? fitTextBoxHeight(text, w, fontSize, 700, SERIF) : h;
   return {
     id: uid("el"),
     kind: "heading",
     x,
     y,
     w,
-    h,
+    h: Math.max(h, minH),
     z: z++,
     text,
-    fontSize: opts.fontSize ?? 30,
+    fontSize,
     align: opts.align ?? "left",
     color: opts.color ?? INK,
     background: "rgba(0,0,0,0)",
@@ -196,7 +206,11 @@ function titlePage(
   els.push(...logoBadge(logo, true));
   els.push(rule(MARGIN, heroH + 0.075, 0.14));
   els.push(eyebrow(typeLabel, MARGIN, heroH + 0.045, CONTENT_W));
-  els.push(heading(headline || "Exposé", MARGIN, heroH + 0.1, CONTENT_W, 0.14, { fontSize: 40 }));
+  els.push(
+    heading(headline || "Exposé", MARGIN, heroH + 0.1, CONTENT_W, 0.14, {
+      fontSize: Math.round(40 * SCRIPT_SCALE),
+    }),
+  );
   if (subtitle) els.push(body(subtitle, MARGIN, heroH + 0.24, CONTENT_W, 0.06));
   return page("Titelseite", CREAM, els);
 }
@@ -215,7 +229,7 @@ function twoColPage(
   const els: PageElement[] = [...logoBadge(logo, false)];
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(textX, 0.145, 0.1));
-  els.push(heading(title, textX, 0.165, textW, 0.09, { fontSize: 25 }));
+  els.push(heading(title, textX, 0.165, textW, 0.09, { fontSize: Math.round(25 * SCRIPT_SCALE) }));
   els.push(body(text, textX, 0.27, textW, 0.6));
   els.push(...photoLayout(photos, photoX, 0.14, photoW, 0.76));
   return page(title, WHITE, els);
@@ -225,7 +239,7 @@ function stackedPage(title: string, text: string, photos: string[], logo: Stored
   const els: PageElement[] = [...logoBadge(logo, false)];
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
-  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: 25 }));
+  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: Math.round(25 * SCRIPT_SCALE) }));
   els.push(body(text, MARGIN, 0.25, CONTENT_W, 0.14));
   els.push(...photoLayout(photos, MARGIN, 0.42, CONTENT_W, 0.48));
   return page(title, WHITE, els);
@@ -235,7 +249,7 @@ function grundrissPage(title: string, text: string, photos: string[], logo: Stor
   const els: PageElement[] = [...logoBadge(logo, false)];
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
-  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: 25 }));
+  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: Math.round(25 * SCRIPT_SCALE) }));
   const photoArea = 0.62;
   if (photos[0]) els.push(image(MARGIN, 0.24, CONTENT_W, photoArea, photos[0]));
   else els.push({ id: uid("el"), kind: "image", x: MARGIN, y: 0.24, w: CONTENT_W, h: photoArea, z: 2, src: "", fit: "contain" });
@@ -247,7 +261,7 @@ function galeriePage(title: string, photos: string[], logo: StoredFile | null): 
   const els: PageElement[] = [...logoBadge(logo, false)];
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
-  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: 25 }));
+  els.push(heading(title, MARGIN, 0.165, CONTENT_W, 0.07, { fontSize: Math.round(25 * SCRIPT_SCALE) }));
   els.push(...photoLayout(photos, MARGIN, 0.26, CONTENT_W, 0.65));
   return page(title, WHITE, els);
 }
@@ -259,7 +273,12 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
     els.push({ id: uid("el"), kind: "logo", x: (1 - w) / 2, y: 0.14, w, h: w * 0.32, z: z++, src: logo.dataUrl });
   }
   els.push(rule(0.5 - 0.06, 0.32, 0.12));
-  els.push(heading("Ihr Ansprechpartner", 0.1, 0.35, 0.8, 0.08, { fontSize: 27, align: "center" }));
+  els.push(
+    heading("Ihr Ansprechpartner", 0.1, 0.35, 0.8, 0.08, {
+      fontSize: Math.round(27 * SCRIPT_SCALE),
+      align: "center",
+    }),
+  );
   els.push({
     id: uid("el"),
     kind: "text",
