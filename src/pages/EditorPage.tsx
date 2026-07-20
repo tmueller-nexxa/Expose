@@ -20,7 +20,7 @@ import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
-import { fitFontSize } from "../editor/fit";
+import { fitFontSize, fitTextBoxHeight } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import { PageCanvas } from "../editor/PageCanvas";
 import { startPointerDrag } from "../editor/pointer";
@@ -183,6 +183,31 @@ export function EditorPage() {
       );
     },
     [mutatePages],
+  );
+
+  // Wie patchElement, aber fuer Textfelder: waechst die Box automatisch
+  // nach unten, falls Text/Schriftgroesse sonst nicht mehr vollstaendig
+  // hineinpassen wuerden - damit nirgends Schrift abgeschnitten wird.
+  const patchTextGrow = useCallback(
+    (elId: string, patch: Partial<TextElement>) => {
+      const cur = projectRef.current;
+      const el = cur?.pages[pageIndex]?.elements.find((e) => e.id === elId) as
+        | TextElement
+        | undefined;
+      if (!el) {
+        patchElement(elId, patch);
+        return;
+      }
+      const merged = { ...el, ...patch };
+      if (merged.text.trim()) {
+        const needed = fitTextBoxHeight(merged.text, merged.w, merged.fontSize, merged.fontWeight);
+        if (needed > merged.h) {
+          patch = { ...patch, h: Math.min(needed, 1 - merged.y) };
+        }
+      }
+      patchElement(elId, patch);
+    },
+    [patchElement, pageIndex],
   );
 
   const deleteElement = useCallback(
@@ -499,6 +524,13 @@ export function EditorPage() {
       max: 20,
       weight: 500,
     });
+    // Sicherheitsnetz: passt der Text selbst bei der kleinsten Schriftgroesse
+    // nicht in die vorgeschlagene Flaeche, die Box innerhalb des Bildes
+    // vergroessern statt Schrift abzuschneiden.
+    if (text.trim()) {
+      const needed = fitTextBoxHeight(text, bw, fontSize, 500);
+      if (needed > bh) bh = Math.min(needed, img.y + img.h - by);
+    }
 
     const cur = projectRef.current;
     if (!cur) return;
@@ -698,7 +730,7 @@ export function EditorPage() {
                 setEditingId(id);
               }}
               onCommitText={(id, text) => {
-                patchElement(id, { text } as Partial<TextElement>);
+                patchTextGrow(id, { text });
                 setEditingId(null);
               }}
               onDropFileToElement={dropFileToElement}
@@ -712,7 +744,11 @@ export function EditorPage() {
           {selected && !selected.locked && (
             <Inspector
               element={selected}
-              onPatch={(patch) => patchElement(selected.id, patch)}
+              onPatch={(patch) =>
+                selected.kind === "text" || selected.kind === "heading"
+                  ? patchTextGrow(selected.id, patch as Partial<TextElement>)
+                  : patchElement(selected.id, patch)
+              }
               onDelete={() => deleteElement(selected.id)}
               onEdit={() => {
                 setEditingId(selected.id);

@@ -1,6 +1,8 @@
 // Ermittelt die groesstmoegliche Schriftgroesse, mit der ein Text vollstaendig
 // in eine Flaeche passt (mit Wortumbruch), damit nichts uebersteht.
 
+import { REF_H, REF_W } from "./constants";
+
 let ctx: CanvasRenderingContext2D | null = null;
 
 function measureCtx(): CanvasRenderingContext2D {
@@ -67,4 +69,24 @@ export function fitFontSize(
     if (lines * size * lineHeight <= innerH) return size;
   }
   return min;
+}
+
+// Ermittelt die noetige Boxhoehe (Seitenanteil 0..1), damit ein Textfeld bei
+// gegebener Breite/Schriftgroesse den Text VOLLSTAENDIG zeigt (kein
+// abgeschnittener Text durch overflow:hidden). Polsterung/Zeilenhoehe
+// entsprechen exakt der Darstellung in CanvasElement.tsx, damit die
+// berechnete Groesse wirklich passt.
+export function fitTextBoxHeight(
+  text: string,
+  boxWFrac: number,
+  fontSize: number,
+  weight = 400,
+): number {
+  const boxW = boxWFrac * REF_W;
+  const padV = Math.max(3, fontSize * 0.35);
+  const padH = padV * 1.2;
+  const innerW = Math.max(10, boxW - padH * 2);
+  const lines = Math.max(1, wrapLines(text, fontSize, weight, innerW));
+  const heightPx = lines * fontSize * 1.35 + padV * 2;
+  return heightPx / REF_H;
 }

@@ -7,6 +7,7 @@ import type {
   TextElement,
 } from "../lib/types";
 import { clamp } from "../lib/util";
+import { fitTextBoxHeight } from "./fit";
 import { startPointerDrag } from "./pointer";
 import { IconImage } from "../components/Icons";
 
@@ -149,6 +150,23 @@ export function CanvasElement(props: Props) {
         const ny = clamp(s.y + fy, 0, s.y + s.h - 0.03);
         y = ny;
         h = s.h - (ny - s.y);
+      }
+      // Textfelder duerfen nie kleiner werden, als der Text bei der
+      // (ggf. gerade geaenderten) Breite/Schriftgroesse braucht - sonst
+      // waere Schrift durch overflow:hidden abgeschnitten.
+      if ((el.kind === "text" || el.kind === "heading") && (el as TextElement).text.trim()) {
+        const t = el as TextElement;
+        const minH = fitTextBoxHeight(t.text, w, t.fontSize, t.fontWeight);
+        if (h < minH) {
+          if (corner.includes("n")) {
+            // Nur die Oberkante bewegt sich - Unterkante fix halten.
+            const bottom = s.y + s.h;
+            h = minH;
+            y = bottom - h;
+          } else {
+            h = minH;
+          }
+        }
       }
       onChange(el.id, { x, y, w, h });
     });

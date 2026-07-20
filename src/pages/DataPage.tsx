@@ -20,6 +20,7 @@ import {
   testApiKey,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
+import { fitTextBoxHeight } from "../editor/fit";
 import { IMAGE_Z } from "../lib/templates";
 import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
@@ -238,20 +239,28 @@ export function DataPage() {
             const onShape = shapes.some(
               (s) => cx >= s.x && cx <= s.x + s.w && cy >= s.y && cy <= s.y + s.h,
             );
+            const text = onShape ? (b.text ?? "") : "";
+            const fontSize = b.fontSize ?? (b.type === "heading" ? 26 : 15);
+            const fontWeight = b.fontWeight ?? (b.type === "heading" ? 700 : 400);
+            // Falls die KI die Box zu knapp geschaetzt hat: so gross wachsen
+            // lassen, dass der uebernommene Text nicht abgeschnitten wird.
+            const h = text.trim()
+              ? Math.max(b.h, Math.min(fitTextBoxHeight(text, b.w, fontSize, fontWeight), 1 - b.y))
+              : b.h;
             return {
               id: uid("el"),
               kind: b.type === "heading" ? "heading" : "text",
               x: b.x,
               y: b.y,
               w: b.w,
-              h: b.h,
+              h,
               z: z++,
-              text: onShape ? (b.text ?? "") : "",
-              fontSize: b.fontSize ?? (b.type === "heading" ? 26 : 15),
+              text,
+              fontSize,
               align: b.align ?? "left",
               color: b.color ?? "#1f2d3d",
               background: "rgba(0,0,0,0)",
-              fontWeight: b.fontWeight ?? (b.type === "heading" ? 700 : 400),
+              fontWeight,
             };
           });
           capturedContent.push({
