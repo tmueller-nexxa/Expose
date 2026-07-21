@@ -26,6 +26,33 @@ export function aiReady(api: ApiSettings): boolean {
   return Boolean(aiProxyUrl) || Boolean(api.apiKey);
 }
 
+type ImageBlock = {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+};
+
+// Baut Bild-Bloecke fuer die Anthropic-API und filtert dabei Bilder heraus,
+// die nicht gelesen werden konnten (z.B. eine im Cloud-Modus ausgelagerte
+// Storage-URL ohne CORS-Freigabe fuer diese Domain - <img>-Tags zeigen das
+// Bild dann zwar an, aber fetch() scheitert). Ohne diesen Filter wuerde ein
+// Bild mit leeren Bilddaten von der API mit einem harten 400-Fehler
+// ("image cannot be empty") abgelehnt. validIndices haelt fest, an welcher
+// Original-Position jeder Block stand, damit Aufrufer Ergebnisse wieder an
+// der richtigen Stelle einsortieren koennen.
+async function buildImageBlocks(
+  dataUrls: string[],
+): Promise<{ blocks: ImageBlock[]; validIndices: number[]; skipped: number }> {
+  const parts = await Promise.all(dataUrls.map((d) => splitDataUrl(d)));
+  const blocks: ImageBlock[] = [];
+  const validIndices: number[] = [];
+  parts.forEach(({ mediaType, base64 }, i) => {
+    if (!base64) return;
+    blocks.push({ type: "image", source: { type: "base64", media_type: mediaType, data: base64 } });
+    validIndices.push(i);
+  });
+  return { blocks, validIndices, skipped: dataUrls.length - blocks.length };
+}
+
 export const MODEL_OPTIONS = [
   { id: "claude-sonnet-5", label: "Claude Sonnet 5 (empfohlen · schnell & guenstig)" },
   { id: "claude-opus-4-8", label: "Claude Opus 4.8 (hoechste Qualitaet)" },
@@ -311,15 +338,8 @@ async function analyzePhotosChunk(
   api: ApiSettings,
   chunk: string[],
 ): Promise<Rect[][] | AiError> {
-  const imageBlocks = await Promise.all(
-    chunk.map(async (dataUrl) => {
-      const { mediaType, base64 } = await splitDataUrl(dataUrl);
-      return {
-        type: "image" as const,
-        source: { type: "base64" as const, media_type: mediaType, data: base64 },
-      };
-    }),
-  );
+  const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk);
+  if (imageBlocks.length === 0) return chunk.map(() => []);
 
   const system =
     "Du erkennst auf Immobilien-Exposé-Seiten ausschliesslich echte, austauschbare Fotografien (Raeume, Gebaeude, Personen, Landschaften). " +
@@ -354,16 +374,23 @@ async function analyzePhotosChunk(
     return { ok: false, message: "Die KI konnte keine Fotobereiche erkennen." };
   }
 
-  // Defensiv auf die Chunk-Laenge ausrichten (padden/kuerzen), damit die
-  // Positionszuordnung zu den Originalseiten nicht verrutscht.
-  const pages = input.pages.slice(0, chunk.length);
-  while (pages.length < chunk.length) pages.push({ photos: [] });
-
-  return pages.map((pg) =>
+  // Defensiv auf die Anzahl gesendeter Bilder ausrichten (padden/kuerzen),
+  // damit die Positionszuordnung nicht verrutscht.
+  const pages = input.pages.slice(0, imageBlocks.length);
+  while (pages.length < imageBlocks.length) pages.push({ photos: [] });
+  const normalized = pages.map((pg) =>
     normalizeRects((pg.photos ?? []).filter((r) => r)).filter(
       (r) => r.w >= 0.12 && r.h >= 0.08 && !(r.h > 0.97 && r.w > 0.97),
     ),
   );
+
+  // Auf die volle, urspruengliche Chunk-Laenge zurueckstreuen (uebersprungene
+  // Bilder erhalten ein leeres Ergebnis statt die Reihenfolge zu verschieben).
+  const result: Rect[][] = chunk.map(() => []);
+  validIndices.forEach((origIdx, i) => {
+    result[origIdx] = normalized[i];
+  });
+  return result;
 }
 
 // Analysiert alle Seitenbilder blockweise und fuehrt die Ergebnisse
@@ -534,15 +561,9 @@ async function analyzeDesignChunk(
   api: ApiSettings,
   chunk: string[],
 ): Promise<DesignPageResult[] | AiError> {
-  const imageBlocks = await Promise.all(
-    chunk.map(async (dataUrl) => {
-      const { mediaType, base64 } = await splitDataUrl(dataUrl);
-      return {
-        type: "image" as const,
-        source: { type: "base64" as const, media_type: mediaType, data: base64 },
-      };
-    }),
-  );
+  const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk);
+  if (imageBlocks.length === 0)
+    return chunk.map(() => ({ title: "Seite", background: "#ffffff", blocks: [] }));
 
   const system =
     "Du bist Experte fuer die pixelgenaue Grafik-Analyse von Immobilien-Exposé-Seiten. " +
@@ -582,8 +603,8 @@ async function analyzeDesignChunk(
     return { ok: false, message: "Die KI konnte das Design nicht analysieren." };
   }
 
-  const pages = input.pages.slice(0, chunk.length);
-  while (pages.length < chunk.length) pages.push({ title: "Seite", background: "#ffffff", blocks: [] });
+  const pages = input.pages.slice(0, imageBlocks.length);
+  while (pages.length < imageBlocks.length) pages.push({ title: "Seite", background: "#ffffff", blocks: [] });
 
   // Prozent-/Pixelwerte auf 0..1 normalisieren (Fallback, falls die KI
   // versehentlich Prozent- oder Pixelwerte statt Anteile liefert).
@@ -600,7 +621,7 @@ async function analyzeDesignChunk(
   const TYPES = new Set(["shape", "heading", "text", "image", "logo"]);
   const ALIGNS = new Set(["left", "center", "right"]);
 
-  return pages.map((pg) => ({
+  const mapped = pages.map((pg) => ({
     title: String(pg.title ?? "Seite").slice(0, 60),
     background: HEX.test(String(pg.background ?? "")) ? String(pg.background) : "#ffffff",
     blocks: (pg.blocks ?? [])
@@ -624,6 +645,12 @@ async function analyzeDesignChunk(
         return block;
       }),
   }));
+
+  const result: DesignPageResult[] = chunk.map(() => ({ title: "Seite", background: "#ffffff", blocks: [] }));
+  validIndices.forEach((origIdx, i) => {
+    result[origIdx] = mapped[i];
+  });
+  return result;
 }
 
 // Analysiert alle Seitenbilder blockweise und fuehrt die Ergebnisse
@@ -748,15 +775,13 @@ export async function analyzeExposeStructure(
     return { ok: false, message: "Keine Inhaltsseiten im Beispiel gefunden." };
 
   const imgs = pageImages.slice(0, 20);
-  const imageBlocks = await Promise.all(
-    imgs.map(async (dataUrl) => {
-      const { mediaType, base64 } = await splitDataUrl(dataUrl);
-      return {
-        type: "image" as const,
-        source: { type: "base64" as const, media_type: mediaType, data: base64 },
-      };
-    }),
-  );
+  const { blocks: imageBlocks } = await buildImageBlocks(imgs);
+  if (imageBlocks.length === 0)
+    return {
+      ok: false,
+      message:
+        "Die Beispiel-Seiten konnten nicht gelesen werden (Bilddaten sind leer). Bitte Beispiel-Datei im Datenbereich erneut hochladen.",
+    };
 
   const system =
     `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
@@ -779,7 +804,7 @@ export async function analyzeExposeStructure(
             ...imageBlocks,
             {
               type: "text",
-              text: `Hier sind ${imgs.length} Inhaltsseite(n) eines Beispiel-Exposés. Beschreibe den groben Seitenaufbau.`,
+              text: `Hier sind ${imageBlocks.length} Inhaltsseite(n) eines Beispiel-Exposés. Beschreibe den groben Seitenaufbau.`,
             },
           ],
         },
@@ -844,15 +869,9 @@ async function analyzePhotoSectionsChunk(
   chunk: string[],
   availableKinds: ExposeSectionKind[],
 ): Promise<PhotoAssignment[] | AiError> {
-  const imageBlocks = await Promise.all(
-    chunk.map(async (dataUrl) => {
-      const { mediaType, base64 } = await splitDataUrl(dataUrl);
-      return {
-        type: "image" as const,
-        source: { type: "base64" as const, media_type: mediaType, data: base64 },
-      };
-    }),
-  );
+  const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk);
+  if (imageBlocks.length === 0)
+    return chunk.map(() => ({ section: "sonstiges" as ExposeSectionKind, caption: "" }));
 
   const system =
     "Du ordnest Immobilienfotos den Seitenabschnitten eines Exposés zu. " +
@@ -885,13 +904,18 @@ async function analyzePhotoSectionsChunk(
   const input = tool?.input as { photos?: { section?: string; caption?: string }[] } | undefined;
   if (!input?.photos) return { ok: false, message: "Die KI konnte die Fotos nicht zuordnen." };
 
-  const photos = input.photos.slice(0, chunk.length);
-  while (photos.length < chunk.length) photos.push({ section: "sonstiges", caption: "" });
-
-  return photos.map((p) => ({
+  const photos = input.photos.slice(0, imageBlocks.length);
+  while (photos.length < imageBlocks.length) photos.push({ section: "sonstiges", caption: "" });
+  const mapped = photos.map((p) => ({
     section: (SECTION_KIND_SET.has(String(p.section)) ? p.section : "sonstiges") as ExposeSectionKind,
     caption: String(p.caption ?? "").slice(0, 140),
   }));
+
+  const result: PhotoAssignment[] = chunk.map(() => ({ section: "sonstiges" as ExposeSectionKind, caption: "" }));
+  validIndices.forEach((origIdx, i) => {
+    result[origIdx] = mapped[i];
+  });
+  return result;
 }
 
 export async function analyzePhotoSections(
