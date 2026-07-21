@@ -254,7 +254,7 @@ export function KiExposePage() {
       const overflowPhotos: string[] = [...byKind.values()].flat().map((p) => p.src);
 
       // 4) Abschnittstexte schreiben.
-      setProgress({ phase: "texte", done: 0, total: 1 });
+      setProgress({ phase: "texte", done: 0, total: sections.length });
       const captionsBySection = sectionPhotos.map((list) => list.map((p) => p.caption));
       const textRes = await writeExposeSectionTexts(
         data.api,
@@ -263,6 +263,7 @@ export function KiExposePage() {
         captionsBySection,
         datasheetText,
         data.styleTexts,
+        (done, total) => setProgress({ phase: "texte", done, total }),
       );
       if (!textRes.ok) {
         setResultMsg({ ok: false, msg: textRes.message });
@@ -304,7 +305,7 @@ export function KiExposePage() {
   const phaseLabel: Record<Phase, string> = {
     struktur: "Seitenaufbau wird aus dem Beispiel abgeleitet …",
     fotos: `Fotos werden analysiert … ${progress?.done ?? 0}/${progress?.total ?? 0}`,
-    texte: "Texte werden geschrieben …",
+    texte: `Texte werden geschrieben … ${progress?.done ?? 0}/${progress?.total ?? 0} Abschnitte`,
     aufbau: "Exposé wird zusammengestellt …",
   };
 

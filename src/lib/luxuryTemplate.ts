@@ -331,19 +331,19 @@ export function buildLuxuryPages(
         pages.push(titlePage(title, text, photos, logo, TYPE_LABEL[type]));
         break;
       case "grundriss":
-        pages.push(grundrissPage(section.title, text, photos, logo));
+        pages.push(grundrissPage(title, text, photos, logo));
         break;
       case "galerie":
-        pages.push(galeriePage(section.title, photos, logo));
+        pages.push(galeriePage(title, photos, logo));
         break;
       case "kontakt":
         pages.push(kontaktPage(logo, photos));
         break;
       default:
         if (photos.length >= 3) {
-          pages.push(stackedPage(section.title, text, photos, logo));
+          pages.push(stackedPage(title, text, photos, logo));
         } else {
-          pages.push(twoColPage(section.title, text, photos, logo, altSide));
+          pages.push(twoColPage(title, text, photos, logo, altSide));
           altSide = !altSide;
         }
     }

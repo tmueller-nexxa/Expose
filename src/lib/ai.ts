@@ -703,16 +703,20 @@ const SECTION_KINDS = [
 ] as const;
 const SECTION_KIND_SET = new Set<string>(SECTION_KINDS);
 
+const MAX_STRUCTURE_SECTIONS = 10;
+
 const STRUCTURE_TOOL = {
   name: "expose_structure",
   description:
-    "Beschreibt NUR den groben, wiederkehrenden Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen.",
+    "Beschreibt NUR den groben, wiederkehrenden Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen. Maximal " +
+    MAX_STRUCTURE_SECTIONS +
+    " zusammengefasste Abschnitte, NICHT eine Seite = ein Abschnitt.",
   input_schema: {
     type: "object",
     properties: {
       sections: {
         type: "array",
-        description: "Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen.",
+        description: `Höchstens ${MAX_STRUCTURE_SECTIONS} Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen - mehrere gleichartige Seiten (z.B. mehrere Zimmerfotos) zaehlen als EIN Abschnitt.`,
         items: {
           type: "object",
           properties: {
@@ -757,7 +761,8 @@ export async function analyzeExposeStructure(
   const system =
     `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
     "Beschreibe NUR die grobe, wiederkehrende Struktur: welche Arten von Inhaltsseiten kommen in welcher Reihenfolge vor (z.B. Titelseite, Objektbeschreibung, Lage, Ausstattung, Grundriss, Galerie, Kontakt)? " +
-    "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. Fasse inhaltlich aehnliche Seiten sinnvoll zu einem Abschnitt zusammen. " +
+    "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. " +
+    `WICHTIG: Liefere HÖCHSTENS ${MAX_STRUCTURE_SECTIONS} Abschnitte, auch wenn das Beispiel mehr Seiten hat - fasse konsequent zusammen (z.B. ALLE Zimmer-/Raumfotos zu EINEM Abschnitt "Objektbeschreibung"/"Innenräume", ALLE Außenaufnahmen zu EINEM Abschnitt "Außenansicht"/"Lage", ALLE Grundriss-Seiten zu EINEM Abschnitt "Grundriss"). Eine Seite = ein Abschnitt ist FALSCH, wenn mehrere Seiten denselben Zweck haben. ` +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
 
   try {
@@ -789,7 +794,7 @@ export async function analyzeExposeStructure(
     if (raw.length === 0)
       return { ok: false, message: "Die KI konnte keinen Seitenaufbau ableiten." };
 
-    const sections: ExposeSection[] = raw.slice(0, 20).map((s) => ({
+    const sections: ExposeSection[] = raw.slice(0, MAX_STRUCTURE_SECTIONS).map((s) => ({
       kind: (SECTION_KIND_SET.has(String(s.kind)) ? s.kind : "sonstiges") as ExposeSectionKind,
       title: String(s.title ?? "Abschnitt").slice(0, 60),
       photoCount: clamp(Math.round(Number(s.photoCount) || 1), 0, 6),
@@ -972,20 +977,21 @@ const SECTION_TEXT_TOOL = {
   },
 };
 
-export async function writeExposeSectionTexts(
+// Schreibt Texte fuer einen kleinen Block von Abschnitten (max. ~5) in EINER
+// Anfrage. Blockweise Verarbeitung verhindert, dass bei vielen Abschnitten
+// (z.B. 15-20 bei einem umfangreichen Beispiel) das Ausgabe-Limit (max_tokens)
+// gesprengt wird und dadurch GAR KEIN Text mehr zurueckkommt.
+async function writeSectionTextsChunk(
   api: ApiSettings,
   type: ExposeType,
-  sections: ExposeSection[],
-  photoDescriptionsBySection: string[][],
+  chunk: ExposeSection[],
+  chunkPhotoDescriptions: string[][],
   datasheetText: string,
   styleTexts: StyleText[],
-): Promise<{ ok: true; texts: SectionText[] } | AiError> {
-  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
-  if (sections.length === 0) return { ok: false, message: "Kein Seitenaufbau vorhanden." };
-
-  const sectionsDesc = sections
+): Promise<SectionText[] | AiError> {
+  const sectionsDesc = chunk
     .map((s, i) => {
-      const photos = photoDescriptionsBySection[i]?.filter(Boolean) ?? [];
+      const photos = chunkPhotoDescriptions[i]?.filter(Boolean) ?? [];
       return `${i + 1}. "${s.title}" (${s.kind}): Fotos zeigen: ${
         photos.length > 0 ? photos.join("; ") : "keine zugeordneten Fotos"
       }`;
@@ -999,34 +1005,78 @@ export async function writeExposeSectionTexts(
     "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_section_texts\" mit GENAU einem Eintrag pro Abschnitt, in der vorgegebenen Reihenfolge.";
 
-  try {
-    const data = await callAnthropic(api, {
-      model: api.model,
-      max_tokens: 3000,
-      system,
-      tools: [SECTION_TEXT_TOOL],
-      tool_choice: { type: "tool", name: "expose_section_texts" },
-      messages: [{ role: "user", content: `Abschnitte:\n${sectionsDesc}` }],
-    });
+  const data = await callAnthropic(api, {
+    model: api.model,
+    max_tokens: 2000,
+    system,
+    tools: [SECTION_TEXT_TOOL],
+    tool_choice: { type: "tool", name: "expose_section_texts" },
+    messages: [{ role: "user", content: `Abschnitte:\n${sectionsDesc}` }],
+  });
 
-    const tool = data.content.find((c) => c.type === "tool_use");
-    const input = tool?.input as { sections?: { headline?: string; text?: string }[] } | undefined;
-    const raw = input?.sections ?? [];
-    if (raw.length === 0) return { ok: false, message: "Die KI konnte keine Texte erzeugen." };
+  const tool = data.content.find((c) => c.type === "tool_use");
+  const input = tool?.input as { sections?: { headline?: string; text?: string }[] } | undefined;
+  if (!input?.sections) return { ok: false, message: "Die KI konnte keine Texte erzeugen." };
 
-    const texts = raw.slice(0, sections.length);
-    while (texts.length < sections.length) texts.push({ headline: "", text: "" });
+  const texts = input.sections.slice(0, chunk.length);
+  while (texts.length < chunk.length) texts.push({ headline: "", text: "" });
+  return texts.map((t) => ({
+    headline: String(t.headline ?? "").trim(),
+    text: String(t.text ?? "").trim(),
+  }));
+}
 
-    return {
-      ok: true,
-      texts: texts.map((t) => ({
-        headline: String(t.headline ?? "").trim(),
-        text: String(t.text ?? "").trim(),
-      })),
-    };
-  } catch (err) {
-    return { ok: false, message: (err as Error).message };
+export async function writeExposeSectionTexts(
+  api: ApiSettings,
+  type: ExposeType,
+  sections: ExposeSection[],
+  photoDescriptionsBySection: string[][],
+  datasheetText: string,
+  styleTexts: StyleText[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ ok: true; texts: SectionText[] } | AiError> {
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
+  if (sections.length === 0) return { ok: false, message: "Kein Seitenaufbau vorhanden." };
+
+  const total = sections.length;
+  const BATCH = 5;
+  const allTexts: SectionText[] = [];
+  let firstError = "";
+  let done = 0;
+  onProgress?.(0, total);
+
+  for (let start = 0; start < sections.length; start += BATCH) {
+    const chunk = sections.slice(start, start + BATCH);
+    const chunkPhotos = photoDescriptionsBySection.slice(start, start + BATCH);
+    let result: SectionText[] | null = null;
+    let err = "";
+    for (let attempt = 1; attempt <= 3 && !result; attempt++) {
+      try {
+        const res = await writeSectionTextsChunk(api, type, chunk, chunkPhotos, datasheetText, styleTexts);
+        if (Array.isArray(res)) {
+          result = res;
+        } else {
+          err = res.message;
+        }
+      } catch (e) {
+        err = (e as Error).message;
+      }
+      if (!result && attempt < 3) await sleep(800 * attempt);
+    }
+    if (result) {
+      allTexts.push(...result);
+    } else {
+      firstError = firstError || err || "unbekannt";
+      for (const s of chunk) allTexts.push({ headline: s.title, text: "" });
+    }
+    done += chunk.length;
+    onProgress?.(done, total);
   }
+
+  if (allTexts.every((t) => !t.text) && firstError) {
+    return { ok: false, message: firstError };
+  }
+  return { ok: true, texts: allTexts };
 }
 
 // Kurzer Verbindungstest fuer den Keys-Bereich.
