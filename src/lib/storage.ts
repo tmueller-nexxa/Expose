@@ -237,6 +237,34 @@ export function saveProject(project: ExposeProject): void {
   void idbSet(projectKey(project.type), project);
 }
 
+// Speichert sofort, ohne das Debounce fuer laufende Interaktions-Edits
+// (Ziehen/Skalieren) abzuwarten, und wird erst nach dem tatsaechlichen
+// Schreiben aufgeloest. Noetig, wenn direkt danach mit loadProject() wieder
+// gelesen wird (z.B. Weiterleitung in den Editor nach der KI-Generierung) -
+// sonst kann ein anstehender, noch nicht ausgefuehrter Debounce-Save durch
+// den naechsten saveProject()-Aufruf mit demselben Debounce-Schluessel
+// ueberschrieben/verworfen werden, bevor er je an Firestore gesendet wurde.
+export async function saveProjectNow(project: ExposeProject): Promise<void> {
+  const uid = useCloud();
+  if (uid) {
+    const key = `project:${uid}:${project.type}`;
+    const pending = debounceTimers.get(key);
+    if (pending) {
+      clearTimeout(pending);
+      debounceTimers.delete(key);
+    }
+    try {
+      await cloudSaveProject(uid, project);
+    } catch (e) {
+      console.error("Cloud-Speichern (project) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+      throw e;
+    }
+    return;
+  }
+  await idbSet(projectKey(project.type), project);
+}
+
 // --- Auth (einfaches Demo-Login) ----------------------------------------
 
 export function isLoggedIn(): boolean {

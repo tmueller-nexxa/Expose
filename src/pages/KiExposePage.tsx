@@ -21,7 +21,7 @@ import { aiProxyUrl } from "../firebase.config";
 import { detectBoilerplate } from "../lib/boilerplate";
 import { boilerplatePages } from "../lib/templates";
 import { buildLuxuryPages, type KiExposeSectionInput } from "../lib/luxuryTemplate";
-import { saveProject } from "../lib/storage";
+import { saveProjectNow } from "../lib/storage";
 import { fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { renderPdfPages } from "../lib/pdf";
 import type { ExposeProject } from "../lib/types";
@@ -288,7 +288,7 @@ export function KiExposePage() {
         updatedAt: Date.now(),
         builtFrom: `ki-expose:${Date.now()}`,
       };
-      saveProject(project);
+      await saveProjectNow(project);
       setResultMsg({ ok: true, msg: `Exposé aus „${source}" generiert – wird geöffnet …` });
       navigate(`/editor/${activeType}`);
     } catch (err) {
