@@ -6,7 +6,6 @@ import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
   type ExposeSection,
-  type ExposeSectionKind,
   type ExposeType,
   type StoredFile,
 } from "../lib/types";
@@ -221,12 +220,13 @@ export function KiExposePage() {
         return;
       }
 
-      // 3) Fotos den Abschnitten zuordnen.
-      const availableKinds = [...new Set(sections.map((s) => s.kind))];
-      let assignments: { section: ExposeSectionKind; caption: string }[] = [];
+      // 3) Fotos den KONKRETEN Abschnitten zuordnen (per Index, nicht nur
+      // grober Art) - so bekommt z.B. "Bad" seine eigenen Fotos und teilt
+      // sie sich nicht mit "Küche", nur weil beide dieselbe Art haben.
+      let assignments: { sectionIndex: number; caption: string }[] = [];
       if (photoPool.length > 0) {
         setProgress({ phase: "fotos", done: 0, total: photoPool.length });
-        const res = await analyzePhotoSections(data.api, photoPool, availableKinds, (done, total) =>
+        const res = await analyzePhotoSections(data.api, photoPool, sections, (done, total) =>
           setProgress({ phase: "fotos", done, total }),
         );
         if (!res.ok) {
@@ -236,22 +236,28 @@ export function KiExposePage() {
         assignments = res.photos;
       }
 
-      // Fotos je Abschnitt einsammeln (mehrere gleichartige Abschnitte teilen
-      // sich den Fototopf reihum); uebrige Fotos gehen in eine Galerie-Seite.
-      const byKind = new Map<ExposeSectionKind, { src: string; caption: string }[]>();
-      photoPool.forEach((src, i) => {
-        const a = assignments[i] ?? { section: "sonstiges" as ExposeSectionKind, caption: "" };
-        const list = byKind.get(a.section) ?? [];
-        list.push({ src, caption: a.caption });
-        byKind.set(a.section, list);
-      });
-      const capFor = (kind: ExposeSectionKind) =>
+      // Fotos direkt dem zugewiesenen Abschnitt zuordnen; alles ohne
+      // passenden Abschnitt oder ueber dem Kappungslimit geht in eine
+      // Galerie-Seite statt verworfen zu werden.
+      const capFor = (kind: (typeof sections)[number]["kind"]) =>
         kind === "titel" ? 1 : kind === "grundriss" ? 1 : kind === "galerie" || kind === "kontakt" ? 4 : 3;
-      const sectionPhotos: { src: string; caption: string }[][] = sections.map((s) => {
-        const pool = byKind.get(s.kind) ?? [];
-        return pool.splice(0, capFor(s.kind));
+      const bySection: { src: string; caption: string }[][] = sections.map(() => []);
+      const overflow: string[] = [];
+      photoPool.forEach((src, i) => {
+        const a = assignments[i] ?? { sectionIndex: -1, caption: "" };
+        if (a.sectionIndex >= 0 && a.sectionIndex < sections.length) {
+          bySection[a.sectionIndex].push({ src, caption: a.caption });
+        } else {
+          overflow.push(src);
+        }
       });
-      const overflowPhotos: string[] = [...byKind.values()].flat().map((p) => p.src);
+      const sectionPhotos: { src: string; caption: string }[][] = sections.map((s, i) => {
+        const cap = capFor(s.kind);
+        const list = bySection[i];
+        if (list.length > cap) overflow.push(...list.slice(cap).map((p) => p.src));
+        return list.slice(0, cap);
+      });
+      const overflowPhotos: string[] = overflow;
 
       // 4) Abschnittstexte schreiben.
       setProgress({ phase: "texte", done: 0, total: sections.length });

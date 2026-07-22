@@ -217,7 +217,7 @@ export async function generateImageText(
 
   const system = `Du bist ein erfahrener Immobilien-Texter und erstellst Exposé-Texte fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(
     styleTexts,
-  )}\n\nAntworte ausschliesslich ueber das Werkzeug "expose_text".`;
+  )}\n\nSchreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. Antworte ausschliesslich ueber das Werkzeug "expose_text".`;
 
   try {
     const data = await callAnthropic(api, {
@@ -788,6 +788,7 @@ export async function analyzeExposeStructure(
     "Beschreibe NUR die grobe, wiederkehrende Struktur: welche Arten von Inhaltsseiten kommen in welcher Reihenfolge vor (z.B. Titelseite, Objektbeschreibung, Lage, Ausstattung, Grundriss, Galerie, Kontakt)? " +
     "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. " +
     `WICHTIG: Liefere HÖCHSTENS ${MAX_STRUCTURE_SECTIONS} Abschnitte, auch wenn das Beispiel mehr Seiten hat - fasse konsequent zusammen (z.B. ALLE Zimmer-/Raumfotos zu EINEM Abschnitt "Objektbeschreibung"/"Innenräume", ALLE Außenaufnahmen zu EINEM Abschnitt "Außenansicht"/"Lage", ALLE Grundriss-Seiten zu EINEM Abschnitt "Grundriss"). Eine Seite = ein Abschnitt ist FALSCH, wenn mehrere Seiten denselben Zweck haben. ` +
+    "Verwende in den Abschnittstiteln echte deutsche Umlaute und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. " +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
 
   try {
@@ -831,52 +832,67 @@ export async function analyzeExposeStructure(
 }
 
 // --- "KI Exposé": Fotos den Seitenabschnitten zuordnen --------------------
+//
+// Zuordnung erfolgt per Index in die KONKRETE Abschnittsliste (Titel, nicht
+// nur grobe Art/"kind") - mehrere Abschnitte koennen dieselbe Art haben
+// (z.B. "Küche" und "Bad" sind beides "ausstattung"), muessen aber jeweils
+// ihre EIGENEN, inhaltlich passenden Fotos bekommen statt sich einen
+// gemeinsamen Topf nach Art zu teilen.
 
 export interface PhotoAssignment {
-  section: ExposeSectionKind;
+  sectionIndex: number; // Index in die uebergebene sections-Liste, -1 = kein guter Treffer.
   caption: string;
 }
 
-const PHOTO_SECTION_TOOL = {
-  name: "photo_sections",
-  description:
-    "Ordnet jedes Foto einem passenden Seitenabschnitt zu und beschreibt kurz, was zu sehen ist.",
-  input_schema: {
-    type: "object",
-    properties: {
-      photos: {
-        type: "array",
-        description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Fotos, eines pro Bild.",
-        items: {
-          type: "object",
-          properties: {
-            section: { type: "string", enum: [...SECTION_KINDS] },
-            caption: {
-              type: "string",
-              description: "Sachliche Kurzbeschreibung des Fotoinhalts (max. 12 Woerter), z.B. Raumart/Ansicht.",
+function buildPhotoSectionTool(sectionCount: number) {
+  return {
+    name: "photo_sections",
+    description:
+      "Ordnet jedes Foto per Index dem inhaltlich am besten passenden Abschnitt zu und beschreibt kurz, was zu sehen ist.",
+    input_schema: {
+      type: "object",
+      properties: {
+        photos: {
+          type: "array",
+          description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Fotos, eines pro Bild.",
+          items: {
+            type: "object",
+            properties: {
+              sectionIndex: {
+                type: "integer",
+                minimum: -1,
+                maximum: Math.max(0, sectionCount - 1),
+                description:
+                  "0-basierter Index des am besten passenden Abschnitts aus der uebergebenen Liste, oder -1 falls kein Abschnitt inhaltlich passt.",
+              },
+              caption: {
+                type: "string",
+                description: "Sachliche Kurzbeschreibung des Fotoinhalts (max. 12 Woerter), z.B. Raumart/Ansicht.",
+              },
             },
+            required: ["sectionIndex", "caption"],
           },
-          required: ["section", "caption"],
         },
       },
+      required: ["photos"],
     },
-    required: ["photos"],
-  },
-};
+  };
+}
 
 async function analyzePhotoSectionsChunk(
   api: ApiSettings,
   chunk: string[],
-  availableKinds: ExposeSectionKind[],
+  sections: ExposeSection[],
 ): Promise<PhotoAssignment[] | AiError> {
   const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk);
-  if (imageBlocks.length === 0)
-    return chunk.map(() => ({ section: "sonstiges" as ExposeSectionKind, caption: "" }));
+  if (imageBlocks.length === 0) return chunk.map(() => ({ sectionIndex: -1, caption: "" }));
 
+  const sectionsDesc = sections.map((s, i) => `${i}. "${s.title}" (${s.kind})`).join("\n");
   const system =
-    "Du ordnest Immobilienfotos den Seitenabschnitten eines Exposés zu. " +
-    `In diesem Exposé kommen folgende Abschnitte vor: ${availableKinds.join(", ")}. ` +
-    "Waehle pro Foto den inhaltlich passendsten Abschnitt (z.B. Aussenansicht/Fassade -> titel, Innenraeume -> objektbeschreibung oder ausstattung, Karte/Umgebung/Strassenansicht -> lage, Grundriss-Zeichnung -> grundriss, sonst galerie oder sonstiges). " +
+    "Du ordnest Immobilienfotos den konkreten Abschnitten eines Exposés zu. " +
+    `Folgende Abschnitte stehen zur Auswahl (Index. "Titel" (Art)):\n${sectionsDesc}\n\n` +
+    "Waehle pro Foto den inhaltlich am besten passenden Abschnitt anhand von TITEL UND Art - mehrere Abschnitte koennen dieselbe Art haben (z.B. \"Küche\" und \"Bad\" sind beide \"ausstattung\"), dann entscheidet allein der Titel, welcher Abschnitt inhaltlich zum Fotoinhalt passt (ein Badezimmerfoto gehoert zum Abschnitt \"Bad\", NICHT zu \"Küche\", auch wenn beide dieselbe Art haben). " +
+    "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
 
@@ -884,7 +900,7 @@ async function analyzePhotoSectionsChunk(
     model: api.model,
     max_tokens: 1500,
     system,
-    tools: [PHOTO_SECTION_TOOL],
+    tools: [buildPhotoSectionTool(sections.length)],
     tool_choice: { type: "tool", name: "photo_sections" },
     messages: [
       {
@@ -901,17 +917,20 @@ async function analyzePhotoSectionsChunk(
   });
 
   const tool = data.content.find((c) => c.type === "tool_use");
-  const input = tool?.input as { photos?: { section?: string; caption?: string }[] } | undefined;
+  const input = tool?.input as { photos?: { sectionIndex?: number; caption?: string }[] } | undefined;
   if (!input?.photos) return { ok: false, message: "Die KI konnte die Fotos nicht zuordnen." };
 
   const photos = input.photos.slice(0, imageBlocks.length);
-  while (photos.length < imageBlocks.length) photos.push({ section: "sonstiges", caption: "" });
-  const mapped = photos.map((p) => ({
-    section: (SECTION_KIND_SET.has(String(p.section)) ? p.section : "sonstiges") as ExposeSectionKind,
-    caption: String(p.caption ?? "").slice(0, 140),
-  }));
+  while (photos.length < imageBlocks.length) photos.push({ sectionIndex: -1, caption: "" });
+  const mapped = photos.map((p) => {
+    const idx = Math.round(Number(p.sectionIndex));
+    return {
+      sectionIndex: Number.isFinite(idx) && idx >= 0 && idx < sections.length ? idx : -1,
+      caption: String(p.caption ?? "").slice(0, 140),
+    };
+  });
 
-  const result: PhotoAssignment[] = chunk.map(() => ({ section: "sonstiges" as ExposeSectionKind, caption: "" }));
+  const result: PhotoAssignment[] = chunk.map(() => ({ sectionIndex: -1, caption: "" }));
   validIndices.forEach((origIdx, i) => {
     result[origIdx] = mapped[i];
   });
@@ -921,7 +940,7 @@ async function analyzePhotoSectionsChunk(
 export async function analyzePhotoSections(
   api: ApiSettings,
   photos: string[],
-  availableKinds: ExposeSectionKind[],
+  sections: ExposeSection[],
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ ok: true; photos: PhotoAssignment[] } | AiError> {
   if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
@@ -941,7 +960,7 @@ export async function analyzePhotoSections(
     let err = "";
     for (let attempt = 1; attempt <= 3 && !result; attempt++) {
       try {
-        const res = await analyzePhotoSectionsChunk(api, chunk, availableKinds);
+        const res = await analyzePhotoSectionsChunk(api, chunk, sections);
         if (Array.isArray(res)) {
           result = res;
         } else {
@@ -956,7 +975,7 @@ export async function analyzePhotoSections(
       allPhotos.push(...result);
     } else {
       firstError = firstError || err || "unbekannt";
-      for (let i = 0; i < chunk.length; i++) allPhotos.push({ section: "sonstiges", caption: "" });
+      for (let i = 0; i < chunk.length; i++) allPhotos.push({ sectionIndex: -1, caption: "" });
     }
     done += chunk.length;
     onProgress?.(done, total);
@@ -1027,6 +1046,7 @@ async function writeSectionTextsChunk(
     "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts und (falls vorhanden) den folgenden Objektdaten aus hochgeladenen Datenblaettern:\n\n" +
     `${datasheetText.trim().slice(0, 6000) || "(keine Datenblaetter hochgeladen)"}\n\n` +
     "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
+    "Schreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren (also \"für\" statt \"fuer\", \"großzügig\" statt \"grosszuegig\"). " +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_section_texts\" mit GENAU einem Eintrag pro Abschnitt, in der vorgegebenen Reihenfolge.";
 
   const data = await callAnthropic(api, {

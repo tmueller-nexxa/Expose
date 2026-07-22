@@ -54,19 +54,21 @@ export function fitFontSize(
     padding?: number;
     lineHeight?: number;
     weight?: number;
+    fontFamily?: string;
   } = {},
 ): number {
+  const isScript = (opts.fontFamily ?? "").toLowerCase().includes("tangerine");
   const min = opts.min ?? 9;
   const max = opts.max ?? 26;
   const padding = opts.padding ?? 12;
-  const lineHeight = opts.lineHeight ?? 1.35;
+  const lineHeight = opts.lineHeight ?? (isScript ? 1.7 : 1.35);
   const weight = opts.weight ?? 400;
 
   const innerW = Math.max(10, boxW - padding * 2);
   const innerH = Math.max(10, boxH - padding * 2);
 
   for (let size = max; size >= min; size -= 1) {
-    const lines = wrapLines(text, size, weight, innerW);
+    const lines = wrapLines(text, size, weight, innerW, opts.fontFamily);
     if (lines * size * lineHeight <= innerH) return size;
   }
   return min;
@@ -84,11 +86,17 @@ export function fitTextBoxHeight(
   weight = 400,
   fontFamily?: string,
 ): number {
+  // Schwungschriften (z.B. Tangerine) haben bei gleicher px-Groesse deutlich
+  // ausladendere Ober-/Unterlaengen (Schnoerkel) als normale Serifen/Grotesk-
+  // schriften - eine normale Zeilenhoehe reicht da nicht, sonst ueberlappen
+  // Schnoerkel den naechsten Textblock.
+  const isScript = (fontFamily ?? "").toLowerCase().includes("tangerine");
+  const lineHeightMul = isScript ? 1.7 : 1.35;
   const boxW = boxWFrac * REF_W;
-  const padV = Math.max(3, fontSize * 0.35);
+  const padV = Math.max(3, fontSize * (isScript ? 0.45 : 0.35));
   const padH = padV * 1.2;
   const innerW = Math.max(10, boxW - padH * 2);
   const lines = Math.max(1, wrapLines(text, fontSize, weight, innerW, fontFamily));
-  const heightPx = lines * fontSize * 1.35 + padV * 2;
+  const heightPx = lines * fontSize * lineHeightMul + padV * 2;
   return heightPx / REF_H;
 }
