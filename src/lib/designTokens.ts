@@ -7,6 +7,10 @@ export const EXPOSE_MUTED = "#6b6459";
 export const EXPOSE_GOLD = "#a9822f";
 export const EXPOSE_CREAM = "#faf7f1";
 export const EXPOSE_WHITE = "#ffffff";
+// Deckendes, neutrales Hellgrau speziell fuer Fliesstext-Hintergrundflaechen
+// (nicht durchsichtig) - bewusst grauer/neutraler als das warme EXPOSE_CREAM,
+// das weiterhin fuer Ueberschriften-Flaechen verwendet wird.
+export const EXPOSE_LIGHT_GREY = "#e6e5e1";
 export const EXPOSE_SCRIPT_FONT = "'Tangerine', Georgia, 'Times New Roman', serif";
 
 // Nur die Farben, die im Exposé tatsächlich als TEXTfarbe verwendet werden

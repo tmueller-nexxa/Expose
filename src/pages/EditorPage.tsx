@@ -17,8 +17,8 @@ import {
   projectStamp,
 } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
-import { generateImageText } from "../lib/ai";
-import { EXPOSE_FONTS, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
+import { generateImageText, generatePageText } from "../lib/ai";
+import { EXPOSE_FONTS, EXPOSE_LIGHT_GREY, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
 import { fitFontSize, fitTextBoxHeight } from "../editor/fit";
@@ -442,18 +442,16 @@ export function EditorPage() {
       flash("Kein API-Key hinterlegt. Bitte im Datenbereich eintragen.", true);
       return;
     }
-    // Alle befuellten Bilder (keine Logos) sammeln.
-    const jobs: { pageIdx: number; img: ImageElement }[] = [];
+    // Befuellte Bilder (keine Logos/Boilerplate) PRO SEITE gruppieren - liegen
+    // mehrere Fotos auf derselben Seite, bekommen sie GEMEINSAM einen
+    // einzigen zusammenfassenden Text statt je einen eigenen Text pro Bild
+    // (siehe generatePageText in ai.ts).
+    const jobs: { pageIdx: number; imgs: ImageElement[] }[] = [];
     cur.pages.forEach((pg, idx) => {
-      for (const e of pg.elements) {
-        if (
-          e.kind === "image" &&
-          (e as ImageElement).src &&
-          !(e as ImageElement).fromBoilerplate
-        ) {
-          jobs.push({ pageIdx: idx, img: e as ImageElement });
-        }
-      }
+      const imgs = pg.elements.filter(
+        (e) => e.kind === "image" && (e as ImageElement).src && !(e as ImageElement).fromBoilerplate,
+      ) as ImageElement[];
+      if (imgs.length > 0) jobs.push({ pageIdx: idx, imgs });
     });
 
     if (jobs.length === 0) {
@@ -463,32 +461,44 @@ export function EditorPage() {
 
     setProgress({ done: 0, total: jobs.length });
     let failures = 0;
+    const totalImages = jobs.reduce((sum, j) => sum + j.imgs.length, 0);
 
     for (let i = 0; i < jobs.length; i++) {
-      const { pageIdx, img } = jobs[i];
+      const { pageIdx, imgs } = jobs[i];
       setPageIndex(pageIdx);
-      setAnalyzingIds((s) => new Set(s).add(img.id));
+      const ids = imgs.map((im) => im.id);
+      setAnalyzingIds((s) => {
+        const n = new Set(s);
+        ids.forEach((id) => n.add(id));
+        return n;
+      });
 
-      const res = await generateImageText(data.api, img.src, exType, data.styleTexts);
+      const res =
+        imgs.length === 1
+          ? await generateImageText(data.api, imgs[0].src, exType, data.styleTexts)
+          : await generatePageText(data.api, imgs.map((im) => im.src), exType, data.styleTexts);
 
       setAnalyzingIds((s) => {
         const n = new Set(s);
-        n.delete(img.id);
+        ids.forEach((id) => n.delete(id));
         return n;
       });
 
       if (res.ok) {
-        applyGeneratedText(pageIdx, img, res);
+        const primaryIdx: number =
+          "primaryIndex" in res && typeof res.primaryIndex === "number" ? res.primaryIndex : 0;
+        const primary = imgs[primaryIdx] ?? imgs[0];
+        applyGeneratedText(pageIdx, primary, res, ids);
       } else {
         failures++;
-        flash(`Fehler bei einem Bild: ${res.message}`, true);
+        flash(`Fehler bei einer Seite: ${res.message}`, true);
       }
       setProgress({ done: i + 1, total: jobs.length });
     }
 
     setProgress(null);
     if (failures === 0) {
-      flash(`Fertig! ${jobs.length} Text${jobs.length > 1 ? "e" : ""} generiert.`);
+      flash(`Fertig! ${jobs.length} Text${jobs.length > 1 ? "e" : ""} für ${totalImages} Bild${totalImages > 1 ? "er" : ""} generiert.`);
     } else {
       flash(
         `${jobs.length - failures} von ${jobs.length} Texten generiert (${failures} Fehler).`,
@@ -506,6 +516,10 @@ export function EditorPage() {
       important: string;
       safeArea: { x: number; y: number; w: number; h: number };
     },
+    // Bild-IDs, die durch diesen (ggf. zusammengefassten) Text abgedeckt
+    // sind - bereits vorhandene generierte Texte zu JEDEM dieser Bilder
+    // werden ersetzt, nicht nur zum primaeren Bild.
+    coveredImageIds: string[] = [img.id],
   ) {
     const sa = res.safeArea;
     // Absolute Position der Textflaeche = innerhalb des Bildes.
@@ -542,12 +556,15 @@ export function EditorPage() {
     mutatePages((pages) =>
       pages.map((pg, idx) => {
         if (idx !== pageIdx) return pg;
-        // Bestehenden generierten Text zu diesem Bild ersetzen.
+        // Bestehenden generierten Text zu JEDEM abgedeckten Bild ersetzen
+        // (bei mehreren Bildern auf der Seite ggf. mehrere alte Einzeltexte).
+        const covered = new Set(coveredImageIds);
         const cleaned = pg.elements.filter(
           (e) =>
             !(
               (e.kind === "text" || e.kind === "heading") &&
-              (e as TextElement).linkedImageId === img.id
+              (e as TextElement).linkedImageId &&
+              covered.has((e as TextElement).linkedImageId as string)
             ),
         );
         const newText: TextElement = {
@@ -562,7 +579,7 @@ export function EditorPage() {
           fontSize,
           align: "left",
           color: "#1f2d3d",
-          background: "rgba(255,255,255,0.86)",
+          background: EXPOSE_LIGHT_GREY,
           fontWeight: 500,
           linkedImageId: img.id,
           generated: true,
@@ -941,7 +958,7 @@ function Inspector({
               onClick={() =>
                 onPatch({
                   background: t.background.startsWith("rgba(0,0,0,0")
-                    ? "rgba(255,255,255,0.86)"
+                    ? EXPOSE_LIGHT_GREY
                     : "rgba(0,0,0,0)",
                 } as Partial<TextElement>)
               }

@@ -119,6 +119,71 @@ export async function eraseRegionsFromImage(
   }
 }
 
+// Wahrnehmungs-Hash (average hash, 8x8 Graustufen-Raster) fuer Fotos -
+// erkennt auch NICHT byte-identische, aber visuell (nahezu) gleiche Fotos
+// als Duplikate. Ein reiner String-Vergleich der DataURL faengt nur exakt
+// gleiche Uploads ab; dasselbe Foto kann aber z.B. einmal direkt hochgeladen
+// und einmal (neu komprimiert) als gerenderte Seite eines PDF-Datenblatts
+// erneut im Foto-Pool landen - dabei entstehen unterschiedliche DataURL-
+// Strings trotz identischem Bildinhalt.
+const HASH_SIZE = 8;
+
+// Der Struktur-Hash allein codiert pro Pixel nur "heller/dunkler als der
+// EIGENE Bilddurchschnitt" - bei einem komplett einfarbigen Bild ist JEDES
+// Pixel exakt gleich dem Durchschnitt, das Ergebnis kollabiert also fuer
+// JEDE Farbe auf denselben Bitmuster (Sonderfall). Darum zusaetzlich die
+// tatsaechliche Durchschnittsfarbe mitliefern - zwei Fotos gelten nur dann
+// als Duplikat, wenn BEIDES (Struktur UND Farbe) nahe beieinander liegt.
+export interface ImageSignature {
+  hash: string;
+  avgColor: [number, number, number];
+}
+
+export async function computeImageSignature(imageDataUrl: string): Promise<ImageSignature> {
+  const img = await loadImage(imageDataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = HASH_SIZE;
+  canvas.height = HASH_SIZE;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { hash: "", avgColor: [0, 0, 0] };
+  ctx.drawImage(img, 0, 0, HASH_SIZE, HASH_SIZE);
+  const data = ctx.getImageData(0, 0, HASH_SIZE, HASH_SIZE).data;
+  const gray: number[] = [];
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    gray.push((data[i] + data[i + 1] + data[i + 2]) / 3);
+    sumR += data[i];
+    sumG += data[i + 1];
+    sumB += data[i + 2];
+  }
+  const n = gray.length;
+  const avg = gray.reduce((a, b) => a + b, 0) / n;
+  const hash = gray.map((v) => (v >= avg ? "1" : "0")).join("");
+  return { hash, avgColor: [sumR / n, sumG / n, sumB / n] };
+}
+
+// Rueckwaertskompatibler Zugriff nur auf den Struktur-Hash (siehe
+// computeImageSignature fuer den vollstaendigen, farbsensitiven Vergleich).
+export async function computePerceptualHash(imageDataUrl: string): Promise<string> {
+  return (await computeImageSignature(imageDataUrl)).hash;
+}
+
+// Anzahl unterschiedlicher Bits zwischen zwei Hashes - je kleiner, desto
+// aehnlicher die Bilder (0 = optisch identisch).
+export function hammingDistance(a: string, b: string): number {
+  if (!a || !b || a.length !== b.length) return Infinity;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return d;
+}
+
+// Euklidischer Abstand zweier Durchschnittsfarben (0..~441).
+export function colorDistance(a: [number, number, number], b: [number, number, number]): number {
+  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+}
+
 // Verwandelt ein Logo (i.d.R. dunkle Form auf hellem/transparentem
 // Hintergrund) in eine reinweisse Silhouette mit transparentem Hintergrund -
 // damit es sich als Badge direkt auf einem Titelbild freistellen laesst,

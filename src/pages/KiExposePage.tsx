@@ -20,7 +20,7 @@ import { aiProxyUrl } from "../firebase.config";
 import { detectBoilerplate } from "../lib/boilerplate";
 import { boilerplatePages } from "../lib/templates";
 import { buildLuxuryPages, type KiExposeSectionInput } from "../lib/luxuryTemplate";
-import { invertLogoToWhite } from "../lib/imageEdit";
+import { colorDistance, computeImageSignature, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { saveProjectNow } from "../lib/storage";
 import { fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { renderPdfPages } from "../lib/pdf";
@@ -204,24 +204,53 @@ export function KiExposePage() {
       }
 
       // 2) Fotos sammeln (echte Fotos + gerenderte PDF-Seiten), Datenblatt-Text extrahieren.
-      // Doppelt hochgeladene/gerenderte Bilder (identischer Inhalt) werden
-      // hier bereits herausgefiltert, damit dasselbe Foto niemals auf
-      // mehreren Seiten des Exposés landet.
+      // Doppelt hochgeladene/gerenderte Bilder werden hier bereits heraus-
+      // gefiltert, damit dasselbe Foto niemals auf mehreren Seiten des
+      // Exposés landet. Ein reiner DataURL-Vergleich reicht dafuer NICHT -
+      // dasselbe Foto kann z.B. einmal direkt hochgeladen und einmal (neu
+      // komprimiert) als gerenderte PDF-Seite erneut im Pool landen, mit
+      // unterschiedlicher DataURL trotz gleichem Bildinhalt. Darum zusaetzlich
+      // ein Wahrnehmungs-Hash-Vergleich (siehe imageEdit.ts) auf visuelle
+      // Naehe. Der Struktur-Hash allein reicht NICHT (kollabiert bei
+      // einfarbigen Flaechen auf dasselbe Bitmuster egal welcher Farbe) -
+      // ein Duplikat wird nur erkannt, wenn ZUSAETZLICH auch die
+      // Durchschnittsfarbe nahe beieinander liegt.
+      const DUPLICATE_HASH_THRESHOLD = 6; // von 64 Bits (8x8-Hash)
+      const DUPLICATE_COLOR_THRESHOLD = 20; // euklidischer RGB-Abstand
       const photoPool: string[] = [];
-      const seenPhotos = new Set<string>();
-      const addPhoto = (src: string) => {
-        if (seenPhotos.has(src)) return;
-        seenPhotos.add(src);
+      const photoSignatures: { hash: string; avgColor: [number, number, number] }[] = [];
+      const seenExact = new Set<string>();
+      const addPhoto = async (src: string) => {
+        if (seenExact.has(src)) return;
+        seenExact.add(src);
+        let sig: { hash: string; avgColor: [number, number, number] } | null = null;
+        try {
+          sig = await computeImageSignature(src);
+        } catch {
+          sig = null;
+        }
+        if (
+          sig &&
+          sig.hash &&
+          photoSignatures.some(
+            (s) =>
+              hammingDistance(s.hash, sig!.hash) <= DUPLICATE_HASH_THRESHOLD &&
+              colorDistance(s.avgColor, sig!.avgColor) <= DUPLICATE_COLOR_THRESHOLD,
+          )
+        ) {
+          return;
+        }
+        if (sig && sig.hash) photoSignatures.push(sig);
         photoPool.push(src);
       };
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
       const pdfFiles = files.filter((f) => f.mime === "application/pdf");
-      for (const f of imageFiles) addPhoto(f.dataUrl);
+      for (const f of imageFiles) await addPhoto(f.dataUrl);
       for (const f of pdfFiles) {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
         for (const p of rendered) {
-          if (p.image) addPhoto(p.image);
+          if (p.image) await addPhoto(p.image);
           if (p.text) datasheetText += `\n\n[${f.name}]\n${p.text}`;
         }
       }

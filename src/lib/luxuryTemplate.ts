@@ -21,6 +21,7 @@ import {
   EXPOSE_CREAM as CREAM,
   EXPOSE_GOLD as GOLD,
   EXPOSE_INK as INK,
+  EXPOSE_LIGHT_GREY as GREY,
   EXPOSE_MUTED as MUTED,
   EXPOSE_SCRIPT_FONT as SERIF,
   EXPOSE_WHITE as WHITE,
@@ -319,7 +320,7 @@ function titlePage(
     : null;
 
   els.push(textPanel(headingEl, WHITE));
-  if (subtitleEl) els.push(textPanel(subtitleEl, WHITE));
+  if (subtitleEl) els.push(textPanel(subtitleEl, GREY));
   els.push(rule(MARGIN, heroH + 0.075, 0.14));
   els.push(eyebrow(typeLabel, MARGIN, heroH + 0.045, CONTENT_W));
   els.push(headingEl);
@@ -342,7 +343,7 @@ function twoColPage(title: string, text: string, photos: string[], photoLeft: bo
   const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop), { maxH: 0.94 - bodyTop });
 
   els.push(textPanel(headingEl, CREAM));
-  els.push(textPanel(bodyEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(textX, 0.145, 0.1));
   els.push(headingEl);
@@ -364,7 +365,7 @@ function stackedPage(title: string, text: string, photos: string[]): Page {
   const photoH = Math.max(0.25, 0.94 - photoTop);
 
   els.push(textPanel(headingEl, CREAM));
-  els.push(textPanel(bodyEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -388,7 +389,7 @@ function grundrissPage(title: string, text: string, photos: string[]): Page {
   const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop), { maxH: 0.94 - textTop });
 
   els.push(textPanel(headingEl, CREAM));
-  els.push(textPanel(bodyEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -428,7 +429,7 @@ function textOnlyPage(title: string, text: string): Page {
   });
 
   els.push(textPanel(headingEl, CREAM));
-  els.push(textPanel(bodyEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.19, 0.1));
   els.push(headingEl);
@@ -466,7 +467,7 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
   const contentBottom = Math.min(0.62, detailsEl.y + detailsEl.h + 0.03);
 
   els.push(textPanel(headingEl, WHITE));
-  els.push(textPanel(detailsEl, WHITE));
+  els.push(textPanel(detailsEl, GREY));
   els.push(rule(0.5 - 0.06, 0.32, 0.12));
   els.push(headingEl);
   els.push(detailsEl);

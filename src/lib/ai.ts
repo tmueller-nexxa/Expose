@@ -307,6 +307,84 @@ export async function generateImageText(
   }
 }
 
+export interface PageTextResult extends ImageTextResult {
+  // Index (innerhalb der uebergebenen imageDataUrls) des Bildes, auf das
+  // sich die safeArea bezieht - i.d.R. das erste lesbare Bild der Seite.
+  primaryIndex: number;
+}
+
+// Analysiert MEHRERE Bilder GEMEINSAM (alle Fotos einer Editor-Seite) und
+// erzeugt EINEN zusammenfassenden Text statt einen pro Bild - genutzt, wenn
+// mehrere Fotos auf derselben Seite platziert sind (siehe EditorPage.tsx
+// handleGenerate()).
+export async function generatePageText(
+  api: ApiSettings,
+  imageDataUrls: string[],
+  type: ExposeType,
+  styleTexts: StyleText[],
+): Promise<PageTextResult | AiError> {
+  if (imageDataUrls.length === 0) return { ok: false, message: "Keine Bilder übergeben." };
+  if (!aiReady(api)) return { ok: false, message: "Kein API-Key hinterlegt." };
+
+  const { blocks, validIndices } = await buildImageBlocks(imageDataUrls);
+  if (blocks.length === 0) {
+    return { ok: false, message: "Bilder konnten nicht gelesen werden." };
+  }
+
+  const system = `Du bist ein erfahrener Immobilien-Texter und erstellst Exposé-Texte fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(
+    styleTexts,
+    type,
+  )}\n\nSchreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. Antworte ausschliesslich ueber das Werkzeug "expose_text".`;
+
+  try {
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 700,
+      system,
+      tools: [TEXT_TOOL],
+      tool_choice: { type: "tool", name: "expose_text" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...blocks,
+            {
+              type: "text",
+              text: `Diese ${blocks.length} Bilder zeigen zusammen denselben Seitenbereich des Exposés. Analysiere sie GEMEINSAM und erzeuge EINEN einzigen, zusammenfassenden Exposé-Text fuer alle Bilder zusammen (NICHT einen eigenen Text pro Bild). Bestimme zusaetzlich eine ruhige Flaeche (safeArea) auf dem ERSTEN der Bilder, auf der dieser Text platziert werden kann, ohne wichtige Bildinhalte zu verdecken.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as Record<string, unknown> | undefined;
+    if (!input) return { ok: false, message: "Keine Antwort von der KI erhalten." };
+
+    const sa = (input.safeArea as ImageTextResult["safeArea"]) ?? {
+      x: 0.08,
+      y: 0.62,
+      w: 0.6,
+      h: 0.28,
+    };
+    return {
+      ok: true,
+      headline: String(input.headline ?? ""),
+      text: String(input.text ?? ""),
+      important: String(input.important ?? ""),
+      safeArea: {
+        x: clamp01(sa.x),
+        y: clamp01(sa.y),
+        w: clamp01(sa.w, 0.2),
+        h: clamp01(sa.h, 0.12),
+      },
+      primaryIndex: validIndices[0] ?? 0,
+    };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
 // --- Fotobereiche auf Standardseiten erkennen (fuer Platzhalter) --------
 //
 // Standardseiten (Impressum/AGB/Widerruf/Kontakt) werden 1:1 als Bild
