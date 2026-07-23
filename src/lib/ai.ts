@@ -892,6 +892,7 @@ async function analyzePhotoSectionsChunk(
     "Du ordnest Immobilienfotos den konkreten Abschnitten eines Exposés zu. " +
     `Folgende Abschnitte stehen zur Auswahl (Index. "Titel" (Art)):\n${sectionsDesc}\n\n` +
     "Waehle pro Foto den inhaltlich am besten passenden Abschnitt anhand von TITEL UND Art - mehrere Abschnitte koennen dieselbe Art haben (z.B. \"Küche\" und \"Bad\" sind beide \"ausstattung\"), dann entscheidet allein der Titel, welcher Abschnitt inhaltlich zum Fotoinhalt passt (ein Badezimmerfoto gehoert zum Abschnitt \"Bad\", NICHT zu \"Küche\", auch wenn beide dieselbe Art haben). " +
+    "WICHTIG: Ein Abschnitt der Art \"titel\" ist die Titelseite und braucht ein repraesentatives Aussen-/Uebersichtsfoto (Fassade, Luftaufnahme, Gesamtansicht des Gebaeudes von aussen) - ist unter den hier gezeigten Fotos ein geeignetes Aussen-/Uebersichtsfoto, ordne es bevorzugt dem \"titel\"-Abschnitt zu, auch wenn dessen Abschnittstitel das nicht woertlich sagt (z.B. eine kreative Ueberschrift wie \"Ihr neues Zuhause\"). " +
     "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
