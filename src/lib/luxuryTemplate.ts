@@ -16,6 +16,7 @@ import type {
 } from "./types";
 import { uid } from "./util";
 import { fitTextBoxHeight } from "../editor/fit";
+import { REF_H, REF_W } from "../editor/constants";
 
 // --- Design-Sprache --------------------------------------------------------
 
@@ -134,9 +135,9 @@ function body(text: string, x: number, y: number, w: number, h: number): PageEle
   };
 }
 
-// Dezente Flaeche hinter einem Textblock, damit Ueberschrift/Text nie direkt
-// auf dem blanken Seitenhintergrund "schweben", sondern immer auf einer zum
-// Stil passenden Flaeche liegen. Wird VOR den eigentlichen Textelementen mit
+// Dezente Flaeche hinter einem Textblock, damit er nie direkt auf dem
+// blanken Seitenhintergrund "schwebt", sondern auf einer zum Stil
+// passenden Flaeche liegt. Wird VOR den eigentlichen Textelementen mit
 // einer niedrigen, fixen z-Ebene angelegt, damit sie garantiert dahinter
 // liegt (z-Zaehler beginnt bei 1 und waechst nur, Fotos liegen fix bei 2).
 function panel(x: number, y: number, w: number, h: number, color: string): PageElement {
@@ -151,6 +152,26 @@ function panel(x: number, y: number, w: number, h: number, color: string): PageE
     color,
     radius: 10,
   };
+}
+
+// Gleichmaessiger Rand rund um die Ueberschrift (in Pixeln der Referenz-
+// groesse umgerechnet, damit der Abstand oben/unten/links/rechts optisch
+// gleich breit wirkt, auch wenn x/w und y/h an unterschiedliche Seiten-
+// masse gekoppelt sind). Die Flaeche wird direkt aus der tatsaechlichen
+// Box der Ueberschrift abgeleitet - waechst die Ueberschrift (mehrzeilig,
+// groessere Schrift), waechst die Flaeche automatisch mit.
+const HEADING_PAD_PX = 18;
+const HEADING_PAD_X = HEADING_PAD_PX / REF_W;
+const HEADING_PAD_Y = HEADING_PAD_PX / REF_H;
+
+function headingPanel(headingEl: PageElement, color: string): PageElement {
+  return panel(
+    headingEl.x - HEADING_PAD_X,
+    headingEl.y - HEADING_PAD_Y,
+    headingEl.w + HEADING_PAD_X * 2,
+    headingEl.h + HEADING_PAD_Y * 2,
+    color,
+  );
 }
 
 function rule(x: number, y: number, w: number, color = GOLD): PageElement {
@@ -267,9 +288,8 @@ function titlePage(
   const subtitleEl = subtitle
     ? body(subtitle, MARGIN, headingEl.y + headingEl.h + 0.025, CONTENT_W, 0.06)
     : null;
-  const blockEnd = subtitleEl ? subtitleEl.y + subtitleEl.h : headingEl.y + headingEl.h;
 
-  els.push(panel(0, heroH, 1, Math.min(1, blockEnd + 0.04) - heroH, WHITE));
+  els.push(headingPanel(headingEl, WHITE));
   els.push(rule(MARGIN, heroH + 0.075, 0.14));
   els.push(eyebrow(typeLabel, MARGIN, heroH + 0.045, CONTENT_W));
   els.push(headingEl);
@@ -297,9 +317,7 @@ function twoColPage(
   const bodyTop = headingEl.y + headingEl.h + 0.02;
   const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop));
 
-  const panelBottom = Math.min(0.94, bodyEl.y + bodyEl.h + 0.03);
-  els.push(panel(textX - 0.035, 0.13, textW + 0.07, panelBottom - 0.13, CREAM));
-
+  els.push(headingPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(textX, 0.145, 0.1));
   els.push(headingEl);
@@ -320,9 +338,7 @@ function stackedPage(title: string, text: string, photos: string[], logo: Stored
   const photoTop = Math.min(0.62, bodyEl.y + bodyEl.h + 0.03);
   const photoH = Math.max(0.25, 0.94 - photoTop);
 
-  const panelBottom = Math.min(photoTop - 0.02, 0.94);
-  els.push(panel(MARGIN - 0.035, 0.13, CONTENT_W + 0.07, panelBottom - 0.13, CREAM));
-
+  els.push(headingPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -345,9 +361,7 @@ function grundrissPage(title: string, text: string, photos: string[], logo: Stor
   const textTop = photoTop + photoArea + (hasPhoto ? 0.03 : 0);
   const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop));
 
-  const panelBottom = Math.min(0.94, hasPhoto ? photoTop - 0.02 : bodyEl.y + bodyEl.h + 0.03);
-  els.push(panel(MARGIN - 0.035, 0.13, CONTENT_W + 0.07, panelBottom - 0.13, CREAM));
-
+  els.push(headingPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -364,9 +378,7 @@ function galeriePage(title: string, photos: string[], logo: StoredFile | null): 
   });
   const photoTop = headingEl.y + headingEl.h + 0.03;
 
-  const panelBottom = Math.min(0.94, photoTop - 0.02);
-  els.push(panel(MARGIN - 0.035, 0.13, CONTENT_W + 0.07, panelBottom - 0.13, CREAM));
-
+  els.push(headingPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -386,9 +398,7 @@ function textOnlyPage(title: string, text: string, logo: StoredFile | null): Pag
   const bodyTop = headingEl.y + headingEl.h + 0.03;
   const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.7 - bodyTop));
 
-  const panelBottom = Math.min(0.94, bodyEl.y + bodyEl.h + 0.04);
-  els.push(panel(MARGIN - 0.04, 0.16, CONTENT_W + 0.08, panelBottom - 0.16, CREAM));
-
+  els.push(headingPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.19, 0.1));
   els.push(headingEl);
@@ -423,13 +433,13 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
     background: "rgba(0,0,0,0)",
     fontWeight: 400,
   };
-  const panelBottom = Math.min(0.62, detailsEl.y + detailsEl.h + 0.03);
+  const contentBottom = Math.min(0.62, detailsEl.y + detailsEl.h + 0.03);
 
-  els.push(panel(0.15, 0.28, 0.7, panelBottom - 0.28, WHITE));
+  els.push(headingPanel(headingEl, WHITE));
   els.push(rule(0.5 - 0.06, 0.32, 0.12));
   els.push(headingEl);
   els.push(detailsEl);
-  if (photos[0]) els.push(image(0.32, panelBottom + 0.03, 0.36, 0.26, photos[0]));
+  if (photos[0]) els.push(image(0.32, contentBottom + 0.03, 0.36, 0.26, photos[0]));
   return page("Kontakt", CREAM, els);
 }
 
