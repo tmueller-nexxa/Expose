@@ -113,21 +113,50 @@ function eyebrow(text: string, x: number, y: number, w: number): PageElement {
   };
 }
 
-function body(text: string, x: number, y: number, w: number, h: number): PageElement {
-  // Waechst automatisch mit dem tatsaechlichen Textinhalt, damit nachfolgende
-  // Elemente (Fotos, naechster Block) korrekt danach positioniert werden
-  // koennen, statt eine feste, ggf. zu kleine Hoehe anzunehmen.
-  const minH = text.trim() ? fitTextBoxHeight(text, w, 13.5, 400) : 0;
+function body(
+  text: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  opts: Partial<{
+    // Wieviel vertikaler Raum (Seitenanteil) der Text maximal zur Verfuegung
+    // hat, bevor die Schrift verkleinert wird - verhindert, dass ein langer
+    // Absatz ueber den unteren Seitenrand hinauswaechst (analog zu heading()).
+    maxH: number;
+  }> = {},
+): PageElement {
+  const maxFontSize = 13.5;
+  const minFontSize = 10.5;
+  const budgetH = opts.maxH ?? h * 3;
+  // Die Boxhoehe folgt ausschliesslich dem tatsaechlichen Textinhalt (nicht
+  // einer geraten Mindesthoehe) - nur so kann die Hintergrundflaeche
+  // (textPanel) wirklich an die Groesse des Fliesstexts angepasst sein.
+  // Schrumpft die Schrift, wenn der Text sonst das Hoehenbudget sprengen
+  // wuerde (analog zu heading()).
+  let fontSize = maxFontSize;
+  let finalH = h;
+  if (text.trim()) {
+    fontSize = minFontSize;
+    for (let size = maxFontSize; size >= minFontSize; size -= 0.5) {
+      const candidateH = fitTextBoxHeight(text, w, size, 400);
+      if (candidateH <= budgetH) {
+        fontSize = size;
+        break;
+      }
+    }
+    finalH = Math.max(0.02, fitTextBoxHeight(text, w, fontSize, 400));
+  }
   return {
     id: uid("el"),
     kind: "text",
     x,
     y,
     w,
-    h: Math.max(h, minH),
+    h: finalH,
     z: z++,
     text,
-    fontSize: 13.5,
+    fontSize,
     align: "left",
     color: MUTED,
     background: "rgba(0,0,0,0)",
@@ -154,24 +183,23 @@ function panel(x: number, y: number, w: number, h: number, color: string): PageE
   };
 }
 
-// Gleichmaessiger Rand rund um die Ueberschrift (in Pixeln der Referenz-
-// groesse umgerechnet, damit der Abstand oben/unten/links/rechts optisch
-// gleich breit wirkt, auch wenn x/w und y/h an unterschiedliche Seiten-
-// masse gekoppelt sind). Die Flaeche wird direkt aus der tatsaechlichen
-// Box der Ueberschrift abgeleitet - waechst die Ueberschrift (mehrzeilig,
-// groessere Schrift), waechst die Flaeche automatisch mit.
-const HEADING_PAD_PX = 18;
-const HEADING_PAD_X = HEADING_PAD_PX / REF_W;
-const HEADING_PAD_Y = HEADING_PAD_PX / REF_H;
+// Gleichmaessiger Rand rund um Ueberschrift bzw. Fliesstext (in Pixeln der
+// Referenzgroesse umgerechnet, damit der Abstand oben/unten/links/rechts
+// optisch gleich breit wirkt, auch wenn x/w und y/h an unterschiedliche
+// Seitenmasse gekoppelt sind). Die Flaeche wird direkt aus der tatsaechlichen
+// Box des jeweiligen Textelements abgeleitet - waechst der Text (mehr
+// Zeilen, groessere Schrift), waechst die Flaeche automatisch mit.
+const TEXT_PAD_PX = 18;
+const TEXT_PAD_X = TEXT_PAD_PX / REF_W;
+const TEXT_PAD_Y = TEXT_PAD_PX / REF_H;
+// Mindestabstand zwischen zwei aufeinanderfolgenden Textelementen (z.B.
+// Ueberschrift -> Fliesstext), damit ihre jeweils eigenen Flaechen sich
+// nicht beruehren/ueberlappen, sondern sichtbar als zwei getrennte Karten
+// erscheinen.
+const TEXT_PANEL_GAP = TEXT_PAD_Y * 2 + 0.012;
 
-function headingPanel(headingEl: PageElement, color: string): PageElement {
-  return panel(
-    headingEl.x - HEADING_PAD_X,
-    headingEl.y - HEADING_PAD_Y,
-    headingEl.w + HEADING_PAD_X * 2,
-    headingEl.h + HEADING_PAD_Y * 2,
-    color,
-  );
+function textPanel(el: PageElement, color: string): PageElement {
+  return panel(el.x - TEXT_PAD_X, el.y - TEXT_PAD_Y, el.w + TEXT_PAD_X * 2, el.h + TEXT_PAD_Y * 2, color);
 }
 
 function rule(x: number, y: number, w: number, color = GOLD): PageElement {
@@ -285,11 +313,13 @@ function titlePage(
     fontSize: Math.round(40 * SCRIPT_SCALE),
     maxH: 0.2,
   });
+  const subtitleTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const subtitleEl = subtitle
-    ? body(subtitle, MARGIN, headingEl.y + headingEl.h + 0.025, CONTENT_W, 0.06)
+    ? body(subtitle, MARGIN, subtitleTop, CONTENT_W, 0.06, { maxH: 0.94 - subtitleTop })
     : null;
 
-  els.push(headingPanel(headingEl, WHITE));
+  els.push(textPanel(headingEl, WHITE));
+  if (subtitleEl) els.push(textPanel(subtitleEl, WHITE));
   els.push(rule(MARGIN, heroH + 0.075, 0.14));
   els.push(eyebrow(typeLabel, MARGIN, heroH + 0.045, CONTENT_W));
   els.push(headingEl);
@@ -314,10 +344,11 @@ function twoColPage(
     fontSize: Math.round(25 * SCRIPT_SCALE),
     maxH: 0.16,
   });
-  const bodyTop = headingEl.y + headingEl.h + 0.02;
-  const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop));
+  const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
+  const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop), { maxH: 0.94 - bodyTop });
 
-  els.push(headingPanel(headingEl, CREAM));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(textX, 0.145, 0.1));
   els.push(headingEl);
@@ -333,12 +364,13 @@ function stackedPage(title: string, text: string, photos: string[], logo: Stored
     fontSize: Math.round(25 * SCRIPT_SCALE),
     maxH: 0.14,
   });
-  const bodyTop = headingEl.y + headingEl.h + 0.02;
-  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, 0.14);
+  const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
+  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, 0.14, { maxH: 0.62 - bodyTop });
   const photoTop = Math.min(0.62, bodyEl.y + bodyEl.h + 0.03);
   const photoH = Math.max(0.25, 0.94 - photoTop);
 
-  els.push(headingPanel(headingEl, CREAM));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -355,13 +387,14 @@ function grundrissPage(title: string, text: string, photos: string[], logo: Stor
     maxH: 0.14,
   });
   const hasPhoto = Boolean(photos[0]);
-  const photoTop = headingEl.y + headingEl.h + 0.03;
+  const photoTop = headingEl.y + headingEl.h + (hasPhoto ? 0.03 : TEXT_PANEL_GAP);
   const photoArea = hasPhoto ? 0.55 : 0;
   if (hasPhoto) els.push(image(MARGIN, photoTop, CONTENT_W, photoArea, photos[0]));
   const textTop = photoTop + photoArea + (hasPhoto ? 0.03 : 0);
-  const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop));
+  const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop), { maxH: 0.94 - textTop });
 
-  els.push(headingPanel(headingEl, CREAM));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -378,7 +411,7 @@ function galeriePage(title: string, photos: string[], logo: StoredFile | null): 
   });
   const photoTop = headingEl.y + headingEl.h + 0.03;
 
-  els.push(headingPanel(headingEl, CREAM));
+  els.push(textPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
@@ -395,10 +428,13 @@ function textOnlyPage(title: string, text: string, logo: StoredFile | null): Pag
     fontSize: Math.round(28 * SCRIPT_SCALE),
     maxH: 0.16,
   });
-  const bodyTop = headingEl.y + headingEl.h + 0.03;
-  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.7 - bodyTop));
+  const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
+  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.7 - bodyTop), {
+    maxH: 0.94 - bodyTop,
+  });
 
-  els.push(headingPanel(headingEl, CREAM));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.19, 0.1));
   els.push(headingEl);
@@ -422,7 +458,7 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
     id: uid("el"),
     kind: "text",
     x: 0.2,
-    y: headingEl.y + headingEl.h + 0.02,
+    y: headingEl.y + headingEl.h + TEXT_PANEL_GAP,
     w: 0.6,
     h: 0.12,
     z: z++,
@@ -435,7 +471,8 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
   };
   const contentBottom = Math.min(0.62, detailsEl.y + detailsEl.h + 0.03);
 
-  els.push(headingPanel(headingEl, WHITE));
+  els.push(textPanel(headingEl, WHITE));
+  els.push(textPanel(detailsEl, WHITE));
   els.push(rule(0.5 - 0.06, 0.32, 0.12));
   els.push(headingEl);
   els.push(detailsEl);
