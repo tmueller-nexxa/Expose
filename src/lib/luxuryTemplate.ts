@@ -189,7 +189,7 @@ function panel(x: number, y: number, w: number, h: number, color: string): PageE
 // Seitenmasse gekoppelt sind). Die Flaeche wird direkt aus der tatsaechlichen
 // Box des jeweiligen Textelements abgeleitet - waechst der Text (mehr
 // Zeilen, groessere Schrift), waechst die Flaeche automatisch mit.
-const TEXT_PAD_PX = 18;
+const TEXT_PAD_PX = 10;
 const TEXT_PAD_X = TEXT_PAD_PX / REF_W;
 const TEXT_PAD_Y = TEXT_PAD_PX / REF_H;
 // Mindestabstand zwischen zwei aufeinanderfolgenden Textelementen (z.B.
