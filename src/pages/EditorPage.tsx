@@ -18,6 +18,7 @@ import {
 } from "../lib/templates";
 import { loadProject, saveProject } from "../lib/storage";
 import { generateImageText } from "../lib/ai";
+import { EXPOSE_FONTS, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
 import { fitFontSize, fitTextBoxHeight } from "../editor/fit";
@@ -894,6 +895,41 @@ function Inspector({
             >
               +
             </button>
+          </div>
+          <div className="sep" />
+          <div className="grp">
+            <span className="lbl">Schriftart</span>
+            {EXPOSE_FONTS.map((f) => (
+              <button
+                key={f.label}
+                className={`tool ${(t.fontFamily || undefined) === f.value ? "active" : ""}`}
+                style={{ fontFamily: f.value, fontSize: f.value ? 18 : 14 }}
+                onClick={() => onPatch({ fontFamily: f.value } as Partial<TextElement>)}
+                title={f.label}
+              >
+                Aa
+              </button>
+            ))}
+          </div>
+          <div className="sep" />
+          <div className="grp">
+            <span className="lbl">Farbe</span>
+            {EXPOSE_TEXT_COLORS.map((c) => (
+              <button
+                key={c.value}
+                className={`swatch ${t.color === c.value ? "active" : ""}`}
+                style={{ background: c.value }}
+                onClick={() => onPatch({ color: c.value } as Partial<TextElement>)}
+                title={c.label}
+              />
+            ))}
+            <input
+              type="color"
+              className="color-input"
+              value={/^#[0-9a-fA-F]{6}$/.test(t.color) ? t.color : "#1f2d3d"}
+              onChange={(e) => onPatch({ color: e.target.value } as Partial<TextElement>)}
+              title="Eigene Farbe"
+            />
           </div>
           <div className="sep" />
           <div className="grp">

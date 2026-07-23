@@ -389,6 +389,18 @@
   color: var(--text-muted);
   font-weight: 600;
 }
+.inspector .swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+}
+.inspector .swatch.active {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
 
 .editor-empty-hint {
   position: absolute;

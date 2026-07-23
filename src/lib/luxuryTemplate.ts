@@ -17,18 +17,24 @@ import type {
 import { uid } from "./util";
 import { fitTextBoxHeight } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
+import {
+  EXPOSE_CREAM as CREAM,
+  EXPOSE_GOLD as GOLD,
+  EXPOSE_INK as INK,
+  EXPOSE_MUTED as MUTED,
+  EXPOSE_SCRIPT_FONT as SERIF,
+  EXPOSE_WHITE as WHITE,
+} from "./designTokens";
 
 // --- Design-Sprache --------------------------------------------------------
+//
+// Farben/Schwungschrift sind in designTokens.ts zentral definiert (dort auch
+// fuer den Editor exportiert, damit manuell hinzugefuegte Textfelder dieselben
+// Optionen anbieten koennen).
 
-const INK = "#211f1a";
-const MUTED = "#6b6459";
-const GOLD = "#a9822f";
-const CREAM = "#faf7f1";
-const WHITE = "#ffffff";
 // Schwungschrift - bei gleicher px-Groesse optisch deutlich kleiner als eine
 // gewoehnliche Serife, darum bei allen Verwendungsstellen entsprechend groesser
 // dimensioniert (siehe SCRIPT_SCALE).
-const SERIF = "'Tangerine', Georgia, 'Times New Roman', serif";
 const SCRIPT_SCALE = 1.6;
 
 const MARGIN = 0.09;
