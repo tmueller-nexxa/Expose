@@ -18,13 +18,12 @@ import { uid } from "./util";
 import { fitTextBoxHeight } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import {
-  EXPOSE_ANTHRACITE as ANTHRACITE,
-  EXPOSE_NAVY as NAVY,
-  EXPOSE_PEARL as PEARL,
-  EXPOSE_PLATINUM as PLATINUM,
-  EXPOSE_SAPPHIRE as SAPPHIRE,
+  EXPOSE_CREAM as CREAM,
+  EXPOSE_GOLD as GOLD,
+  EXPOSE_INK as INK,
+  EXPOSE_MUTED as MUTED,
   EXPOSE_SCRIPT_FONT as SERIF,
-  EXPOSE_SILVER as SILVER,
+  EXPOSE_WHITE as WHITE,
 } from "./designTokens";
 
 // --- Design-Sprache --------------------------------------------------------
@@ -95,7 +94,7 @@ function heading(
     text,
     fontSize,
     align: opts.align ?? "left",
-    color: opts.color ?? NAVY,
+    color: opts.color ?? INK,
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
     fontFamily: SERIF,
@@ -114,7 +113,7 @@ function eyebrow(text: string, x: number, y: number, w: number): PageElement {
     text: text.toUpperCase(),
     fontSize: 12,
     align: "left",
-    color: PLATINUM,
+    color: GOLD,
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
   };
@@ -165,7 +164,7 @@ function body(
     text,
     fontSize,
     align: "left",
-    color: ANTHRACITE,
+    color: MUTED,
     background: "rgba(0,0,0,0)",
     fontWeight: 400,
   };
@@ -209,23 +208,7 @@ function textPanel(el: PageElement, color: string): PageElement {
   return panel(el.x - TEXT_PAD_X, el.y - TEXT_PAD_Y, el.w + TEXT_PAD_X * 2, el.h + TEXT_PAD_Y * 2, color);
 }
 
-// Wie textPanel(), aber mit einem duennen Silber-Rahmen darum - fuer den
-// Makler-Profilbereich auf der Kontaktseite. Rahmen liegt als minimal
-// groessere Flaeche HINTER dem eigentlichen Panel (gleicher z-Wert 0, aber
-// zuerst im Array -> stabile Sortierung haelt die Einfuegereihenfolge bei
-// Gleichstand ein, das Panel landet also vor/ueber dem Rahmen).
-function borderedTextPanel(el: PageElement, color: string): PageElement[] {
-  const border = panel(
-    el.x - TEXT_PAD_X - BORDER_X,
-    el.y - TEXT_PAD_Y - BORDER_Y,
-    el.w + (TEXT_PAD_X + BORDER_X) * 2,
-    el.h + (TEXT_PAD_Y + BORDER_Y) * 2,
-    SILVER,
-  );
-  return [border, textPanel(el, color)];
-}
-
-function rule(x: number, y: number, w: number, color = SILVER): PageElement {
+function rule(x: number, y: number, w: number, color = GOLD): PageElement {
   return {
     id: uid("el"),
     kind: "shape",
@@ -250,29 +233,6 @@ function image(x: number, y: number, w: number, h: number, src: string): PageEle
     src,
     fit: "cover",
   };
-}
-
-// Duenner, praeziser Silber-Rahmen um ein Foto - eine minimal groessere
-// Silber-Flaeche liegt HINTER dem Bild (gleicher z-Wert wie image(), aber
-// zuerst im Array platziert - bei gleichem z gewinnt bei stabiler Sortierung
-// die Einfuegereihenfolge), sodass nur ein duenner Rand an allen vier Seiten
-// sichtbar bleibt.
-const BORDER_PX = 3;
-const BORDER_X = BORDER_PX / REF_W;
-const BORDER_Y = BORDER_PX / REF_H;
-
-function borderedImage(x: number, y: number, w: number, h: number, src: string): PageElement[] {
-  const border: PageElement = {
-    id: uid("el"),
-    kind: "shape",
-    x: x - BORDER_X,
-    y: y - BORDER_Y,
-    w: w + BORDER_X * 2,
-    h: h + BORDER_Y * 2,
-    z: 2,
-    color: SILVER,
-  };
-  return [border, image(x, y, w, h, src)];
 }
 
 // Logo-Badge oben rechts auf dem Titelbild - erscheint NUR auf der ersten
@@ -305,28 +265,28 @@ function photoLayout(photos: string[], x: number, y: number, w: number, h: numbe
   const gap = 0.014;
   const n = Math.min(photos.length, 4);
   if (n === 0) return [];
-  if (n === 1) return borderedImage(x, y, w, h, photos[0]);
+  if (n === 1) return [image(x, y, w, h, photos[0])];
   if (n === 2) {
     const hh = (h - gap) / 2;
-    return [...borderedImage(x, y, w, hh, photos[0]), ...borderedImage(x, y + hh + gap, w, hh, photos[1])];
+    return [image(x, y, w, hh, photos[0]), image(x, y + hh + gap, w, hh, photos[1])];
   }
   if (n === 3) {
     const bigH = h * 0.6;
     const smallW = (w - gap) / 2;
     const smallH = h - bigH - gap;
     return [
-      ...borderedImage(x, y, w, bigH, photos[0]),
-      ...borderedImage(x, y + bigH + gap, smallW, smallH, photos[1]),
-      ...borderedImage(x + smallW + gap, y + bigH + gap, smallW, smallH, photos[2]),
+      image(x, y, w, bigH, photos[0]),
+      image(x, y + bigH + gap, smallW, smallH, photos[1]),
+      image(x + smallW + gap, y + bigH + gap, smallW, smallH, photos[2]),
     ];
   }
   const hw = (w - gap) / 2;
   const hh = (h - gap) / 2;
   return [
-    ...borderedImage(x, y, hw, hh, photos[0]),
-    ...borderedImage(x + hw + gap, y, hw, hh, photos[1]),
-    ...borderedImage(x, y + hh + gap, hw, hh, photos[2]),
-    ...borderedImage(x + hw + gap, y + hh + gap, hw, hh, photos[3]),
+    image(x, y, hw, hh, photos[0]),
+    image(x + hw + gap, y, hw, hh, photos[1]),
+    image(x, y + hh + gap, hw, hh, photos[2]),
+    image(x + hw + gap, y + hh + gap, hw, hh, photos[3]),
   ];
 }
 
@@ -342,9 +302,7 @@ function titlePage(
   const heroH = 0.6;
   const els: PageElement[] = [];
   if (photos[0]) els.push(image(0, 0, 1, heroH, photos[0]));
-  // Dunkler Ton statt PEARL, falls kein Titelfoto vorhanden ist - sonst waere
-  // das weisse Logo darauf kaum zu erkennen (weiss auf hellem Perlton).
-  else els.push({ id: uid("el"), kind: "shape", x: 0, y: 0, w: 1, h: heroH, z: 1, color: NAVY });
+  else els.push({ id: uid("el"), kind: "shape", x: 0, y: 0, w: 1, h: heroH, z: 1, color: "#e7e2d8" });
   els.push(...heroLogoBadge(logo));
 
   // Ueberschrift/Untertitel zuerst bauen (ohne zu pushen), um ihre
@@ -360,13 +318,13 @@ function titlePage(
     ? body(subtitle, MARGIN, subtitleTop, CONTENT_W, 0.06, { maxH: 0.94 - subtitleTop })
     : null;
 
-  els.push(textPanel(headingEl, PEARL));
-  if (subtitleEl) els.push(textPanel(subtitleEl, PEARL));
+  els.push(textPanel(headingEl, WHITE));
+  if (subtitleEl) els.push(textPanel(subtitleEl, WHITE));
   els.push(rule(MARGIN, heroH + 0.075, 0.14));
   els.push(eyebrow(typeLabel, MARGIN, heroH + 0.045, CONTENT_W));
   els.push(headingEl);
   if (subtitleEl) els.push(subtitleEl);
-  return page("Titelseite", SAPPHIRE, els);
+  return page("Titelseite", CREAM, els);
 }
 
 function twoColPage(title: string, text: string, photos: string[], photoLeft: boolean): Page {
@@ -383,14 +341,14 @@ function twoColPage(title: string, text: string, photos: string[], photoLeft: bo
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop), { maxH: 0.94 - bodyTop });
 
-  els.push(textPanel(headingEl, PEARL));
-  els.push(textPanel(bodyEl, PEARL));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(textX, 0.145, 0.1));
   els.push(headingEl);
   els.push(bodyEl);
   els.push(...photoLayout(photos, photoX, 0.14, photoW, 0.76));
-  return page(title, SAPPHIRE, els);
+  return page(title, WHITE, els);
 }
 
 function stackedPage(title: string, text: string, photos: string[]): Page {
@@ -405,14 +363,14 @@ function stackedPage(title: string, text: string, photos: string[]): Page {
   const photoTop = Math.min(0.62, bodyEl.y + bodyEl.h + 0.03);
   const photoH = Math.max(0.25, 0.94 - photoTop);
 
-  els.push(textPanel(headingEl, PEARL));
-  els.push(textPanel(bodyEl, PEARL));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
   els.push(bodyEl);
   els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoH));
-  return page(title, SAPPHIRE, els);
+  return page(title, WHITE, els);
 }
 
 function grundrissPage(title: string, text: string, photos: string[]): Page {
@@ -425,17 +383,17 @@ function grundrissPage(title: string, text: string, photos: string[]): Page {
   const hasPhoto = Boolean(photos[0]);
   const photoTop = headingEl.y + headingEl.h + (hasPhoto ? 0.03 : TEXT_PANEL_GAP);
   const photoArea = hasPhoto ? 0.55 : 0;
-  if (hasPhoto) els.push(...borderedImage(MARGIN, photoTop, CONTENT_W, photoArea, photos[0]));
+  if (hasPhoto) els.push(image(MARGIN, photoTop, CONTENT_W, photoArea, photos[0]));
   const textTop = photoTop + photoArea + (hasPhoto ? 0.03 : 0);
   const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop), { maxH: 0.94 - textTop });
 
-  els.push(textPanel(headingEl, PEARL));
-  els.push(textPanel(bodyEl, PEARL));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
   els.push(bodyEl);
-  return page(title, SAPPHIRE, els);
+  return page(title, WHITE, els);
 }
 
 function galeriePage(title: string, photos: string[]): Page {
@@ -447,12 +405,12 @@ function galeriePage(title: string, photos: string[]): Page {
   });
   const photoTop = headingEl.y + headingEl.h + 0.03;
 
-  els.push(textPanel(headingEl, PEARL));
+  els.push(textPanel(headingEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.145, 0.1));
   els.push(headingEl);
   els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, Math.max(0.3, 0.94 - photoTop)));
-  return page(title, SAPPHIRE, els);
+  return page(title, WHITE, els);
 }
 
 // Fuer Abschnitte ohne zugeordnete Fotos: reiner Textblock auf Karte statt
@@ -469,13 +427,13 @@ function textOnlyPage(title: string, text: string): Page {
     maxH: 0.94 - bodyTop,
   });
 
-  els.push(textPanel(headingEl, PEARL));
-  els.push(textPanel(bodyEl, PEARL));
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, CREAM));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.19, 0.1));
   els.push(headingEl);
   els.push(bodyEl);
-  return page(title, SAPPHIRE, els);
+  return page(title, WHITE, els);
 }
 
 function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
@@ -501,21 +459,19 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
     text: "",
     fontSize: 15,
     align: "center",
-    color: ANTHRACITE,
+    color: MUTED,
     background: "rgba(0,0,0,0)",
     fontWeight: 400,
   };
   const contentBottom = Math.min(0.62, detailsEl.y + detailsEl.h + 0.03);
 
-  // Makler-Profilbereich bekommt einen duennen Silber-Rahmen (Ueberschrift +
-  // Kontaktdaten je eine eigene, silbern umrandete Perlen-Karte).
-  els.push(...borderedTextPanel(headingEl, PEARL));
-  els.push(...borderedTextPanel(detailsEl, PEARL));
+  els.push(textPanel(headingEl, WHITE));
+  els.push(textPanel(detailsEl, WHITE));
   els.push(rule(0.5 - 0.06, 0.32, 0.12));
   els.push(headingEl);
   els.push(detailsEl);
-  if (photos[0]) els.push(...borderedImage(0.32, contentBottom + 0.03, 0.36, 0.26, photos[0]));
-  return page("Kontakt", SAPPHIRE, els);
+  if (photos[0]) els.push(image(0.32, contentBottom + 0.03, 0.36, 0.26, photos[0]));
+  return page("Kontakt", CREAM, els);
 }
 
 // --- Zusammenbau -------------------------------------------------------------
