@@ -203,15 +203,24 @@ export function KiExposePage() {
       }
 
       // 2) Fotos sammeln (echte Fotos + gerenderte PDF-Seiten), Datenblatt-Text extrahieren.
+      // Doppelt hochgeladene/gerenderte Bilder (identischer Inhalt) werden
+      // hier bereits herausgefiltert, damit dasselbe Foto niemals auf
+      // mehreren Seiten des Exposés landet.
       const photoPool: string[] = [];
+      const seenPhotos = new Set<string>();
+      const addPhoto = (src: string) => {
+        if (seenPhotos.has(src)) return;
+        seenPhotos.add(src);
+        photoPool.push(src);
+      };
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
       const pdfFiles = files.filter((f) => f.mime === "application/pdf");
-      for (const f of imageFiles) photoPool.push(f.dataUrl);
+      for (const f of imageFiles) addPhoto(f.dataUrl);
       for (const f of pdfFiles) {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
         for (const p of rendered) {
-          if (p.image) photoPool.push(p.image);
+          if (p.image) addPhoto(p.image);
           if (p.text) datasheetText += `\n\n[${f.name}]\n${p.text}`;
         }
       }
