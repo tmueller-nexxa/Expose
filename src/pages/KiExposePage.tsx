@@ -20,6 +20,7 @@ import { aiProxyUrl } from "../firebase.config";
 import { detectBoilerplate } from "../lib/boilerplate";
 import { boilerplatePages } from "../lib/templates";
 import { buildLuxuryPages, type KiExposeSectionInput } from "../lib/luxuryTemplate";
+import { invertLogoToWhite } from "../lib/imageEdit";
 import { saveProjectNow } from "../lib/storage";
 import { fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { renderPdfPages } from "../lib/pdf";
@@ -293,7 +294,13 @@ export function KiExposePage() {
         headline: textRes.texts[i]?.headline ?? "",
         text: textRes.texts[i]?.text ?? "",
       }));
-      const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos);
+      // Logo-Badge auf der Titelseite liegt direkt auf dem Foto - dafuer
+      // eine weiss/transparent aufbereitete Version des Logos verwenden,
+      // damit es ohne eigene Hintergrundflaeche freigestellt erscheint.
+      const heroLogo = data.logo
+        ? { ...data.logo, mime: "image/png", dataUrl: await invertLogoToWhite(data.logo.dataUrl) }
+        : null;
+      const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo);
 
       const project: ExposeProject = {
         id: uid("proj"),

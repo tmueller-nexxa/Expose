@@ -235,29 +235,23 @@ function image(x: number, y: number, w: number, h: number, src: string): PageEle
   };
 }
 
-function logoBadge(logo: StoredFile | null, onPhoto: boolean): PageElement[] {
+// Logo-Badge oben rechts auf dem Titelbild - erscheint NUR auf der ersten
+// Seite. Erwartet bereits eine weiss/transparent aufbereitete Version des
+// Logos (siehe invertLogoToWhite() in imageEdit.ts), darum keine eigene
+// Hintergrundflaeche dahinter (die wuerde ein weisses Logo unsichtbar
+// machen) - das Logo liegt direkt auf dem Foto.
+function heroLogoBadge(logo: StoredFile | null): PageElement[] {
   if (!logo) return [];
   const w = 0.16;
   const h = 0.045;
   const x = 1 - MARGIN - w;
   const y = 0.035;
-  const els: PageElement[] = [];
-  if (onPhoto) {
-    els.push({
-      id: uid("el"),
-      kind: "shape",
-      x: x - 0.012,
-      y: y - 0.008,
-      w: w + 0.024,
-      h: h + 0.016,
-      z: z++,
-      color: "rgba(255,255,255,0.92)",
-      radius: 4,
-    });
-  }
-  const logoEl: LogoElement = { id: uid("el"), kind: "logo", x, y, w, h, z: z++, src: logo.dataUrl };
-  els.push(logoEl);
-  return els;
+  // Fester z-Wert oberhalb von IMAGE_Z (2, siehe image()) statt des
+  // laufenden Zaehlers z++ - der steht auf der allerersten Seite (fast immer
+  // die Titelseite) noch bei 1 und wuerde das Logo sonst HINTER dem
+  // Titelfoto einsortieren (unsichtbar).
+  const logoEl: LogoElement = { id: uid("el"), kind: "logo", x, y, w, h, z: 3, src: logo.dataUrl };
+  return [logoEl];
 }
 
 function page(title: string, background: string, elements: PageElement[]): Page {
@@ -309,7 +303,7 @@ function titlePage(
   const els: PageElement[] = [];
   if (photos[0]) els.push(image(0, 0, 1, heroH, photos[0]));
   else els.push({ id: uid("el"), kind: "shape", x: 0, y: 0, w: 1, h: heroH, z: 1, color: "#e7e2d8" });
-  els.push(...logoBadge(logo, true));
+  els.push(...heroLogoBadge(logo));
 
   // Ueberschrift/Untertitel zuerst bauen (ohne zu pushen), um ihre
   // tatsaechliche Hoehe zu kennen, BEVOR Panel und Folgeelemente anhand
@@ -333,18 +327,12 @@ function titlePage(
   return page("Titelseite", CREAM, els);
 }
 
-function twoColPage(
-  title: string,
-  text: string,
-  photos: string[],
-  logo: StoredFile | null,
-  photoLeft: boolean,
-): Page {
+function twoColPage(title: string, text: string, photos: string[], photoLeft: boolean): Page {
   const textW = 0.36;
   const photoW = CONTENT_W - textW - 0.05;
   const textX = photoLeft ? 1 - MARGIN - textW : MARGIN;
   const photoX = photoLeft ? MARGIN : 1 - MARGIN - photoW;
-  const els: PageElement[] = [...logoBadge(logo, false)];
+  const els: PageElement[] = [];
 
   const headingEl = heading(title, textX, 0.165, textW, 0.09, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
@@ -363,8 +351,8 @@ function twoColPage(
   return page(title, WHITE, els);
 }
 
-function stackedPage(title: string, text: string, photos: string[], logo: StoredFile | null): Page {
-  const els: PageElement[] = [...logoBadge(logo, false)];
+function stackedPage(title: string, text: string, photos: string[]): Page {
+  const els: PageElement[] = [];
 
   const headingEl = heading(title, MARGIN, 0.165, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
@@ -385,8 +373,8 @@ function stackedPage(title: string, text: string, photos: string[], logo: Stored
   return page(title, WHITE, els);
 }
 
-function grundrissPage(title: string, text: string, photos: string[], logo: StoredFile | null): Page {
-  const els: PageElement[] = [...logoBadge(logo, false)];
+function grundrissPage(title: string, text: string, photos: string[]): Page {
+  const els: PageElement[] = [];
 
   const headingEl = heading(title, MARGIN, 0.165, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
@@ -408,8 +396,8 @@ function grundrissPage(title: string, text: string, photos: string[], logo: Stor
   return page(title, WHITE, els);
 }
 
-function galeriePage(title: string, photos: string[], logo: StoredFile | null): Page {
-  const els: PageElement[] = [...logoBadge(logo, false)];
+function galeriePage(title: string, photos: string[]): Page {
+  const els: PageElement[] = [];
 
   const headingEl = heading(title, MARGIN, 0.165, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
@@ -427,8 +415,8 @@ function galeriePage(title: string, photos: string[], logo: StoredFile | null): 
 
 // Fuer Abschnitte ohne zugeordnete Fotos: reiner Textblock auf Karte statt
 // eine grosse, leere Fotoflaeche zu reservieren.
-function textOnlyPage(title: string, text: string, logo: StoredFile | null): Page {
-  const els: PageElement[] = [...logoBadge(logo, false)];
+function textOnlyPage(title: string, text: string): Page {
+  const els: PageElement[] = [];
 
   const headingEl = heading(title, MARGIN, 0.22, CONTENT_W, 0.09, {
     fontSize: Math.round(28 * SCRIPT_SCALE),
@@ -507,6 +495,12 @@ export function buildLuxuryPages(
   inputs: KiExposeSectionInput[],
   logo: StoredFile | null,
   overflowPhotos: string[],
+  // Logo-Badge oben rechts erscheint NUR auf der Titelseite und erwartet
+  // eine weiss/transparent aufbereitete Version (siehe invertLogoToWhite()) -
+  // faellt ohne Angabe auf das normale Logo zurueck. Die Kontaktseite nutzt
+  // weiterhin das normale (nicht invertierte) Logo, da sie keinen Fotohinter-
+  // grund hat.
+  heroLogo: StoredFile | null = logo,
 ): Page[] {
   z = 1;
   const pages: Page[] = [];
@@ -516,24 +510,24 @@ export function buildLuxuryPages(
     const title = headline || section.title;
     switch (section.kind) {
       case "titel":
-        pages.push(titlePage(title, text, photos, logo, TYPE_LABEL[type]));
+        pages.push(titlePage(title, text, photos, heroLogo, TYPE_LABEL[type]));
         break;
       case "grundriss":
-        pages.push(grundrissPage(title, text, photos, logo));
+        pages.push(grundrissPage(title, text, photos));
         break;
       case "galerie":
-        pages.push(galeriePage(title, photos, logo));
+        pages.push(galeriePage(title, photos));
         break;
       case "kontakt":
         pages.push(kontaktPage(logo, photos));
         break;
       default:
         if (photos.length === 0) {
-          pages.push(textOnlyPage(title, text, logo));
+          pages.push(textOnlyPage(title, text));
         } else if (photos.length >= 3) {
-          pages.push(stackedPage(title, text, photos, logo));
+          pages.push(stackedPage(title, text, photos));
         } else {
-          pages.push(twoColPage(title, text, photos, logo, altSide));
+          pages.push(twoColPage(title, text, photos, altSide));
           altSide = !altSide;
         }
     }
@@ -543,7 +537,7 @@ export function buildLuxuryPages(
   // als zusaetzliche Galerie-Seite(n) anhaengen.
   for (let i = 0; i < overflowPhotos.length; i += 4) {
     const chunk = overflowPhotos.slice(i, i + 4);
-    pages.push(galeriePage(i === 0 ? "Weitere Impressionen" : "Impressionen", chunk, logo));
+    pages.push(galeriePage(i === 0 ? "Weitere Impressionen" : "Impressionen", chunk));
   }
 
   return pages;

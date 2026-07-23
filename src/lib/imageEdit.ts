@@ -118,3 +118,37 @@ export async function eraseRegionsFromImage(
     return imageDataUrl;
   }
 }
+
+// Verwandelt ein Logo (i.d.R. dunkle Form auf hellem/transparentem
+// Hintergrund) in eine reinweisse Silhouette mit transparentem Hintergrund -
+// damit es sich als Badge direkt auf einem Titelbild freistellen laesst,
+// ohne eigene Hintergrundflaeche zu brauchen. Dunkle Pixel werden weiss und
+// deckend, helle Pixel transparent; die urspruengliche Helligkeit steuert
+// die Deckkraft, damit Kantenglaettung erhalten bleibt.
+export async function invertLogoToWhite(imageDataUrl: string): Promise<string> {
+  try {
+    const img = await loadImage(imageDataUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return imageDataUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const luminance = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255; // 0 schwarz .. 1 weiss
+      const inkAlpha = (1 - luminance) * (d[i + 3] / 255);
+      d[i] = 255;
+      d[i + 1] = 255;
+      d[i + 2] = 255;
+      d[i + 3] = Math.round(inkAlpha * 255);
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL("image/png");
+  } catch (err) {
+    console.warn("Logo-Invertierung fehlgeschlagen, Original wird beibehalten:", err);
+    return imageDataUrl;
+  }
+}
