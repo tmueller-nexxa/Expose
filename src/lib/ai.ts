@@ -154,16 +154,52 @@ async function callAnthropic(
 
 class AiCallError extends Error {}
 
-function buildStyleContext(styleTexts: StyleText[]): string {
+// Typspezifisches Wortfeld-Register, passend zum jeweiligen Zielpublikum -
+// unabhaengig davon, ob eigene Stilbeispiele hinterlegt sind (die eigentliche
+// Wortwahl/Satzmelodie kommt dann aus den Stilbeispielen, aber das Register
+// hilft trotzdem, inhaltlich die richtigen Schwerpunkte zu setzen).
+const TYPE_STYLE_HINT: Record<ExposeType, string> = {
+  gewerbe:
+    "Betone Investment-Aspekte: Kapitalanlage, Rendite, Mieteinnahmen, kalkulierbare/stabile Einnahmen, Cashflow, Vermoegensaufbau, Risikostreuung, Nutzungsvielfalt.",
+  mehrfamilienhaus:
+    "Betone Investment-Aspekte: Kapitalanlage, Rendite, Mieteinnahmen, kalkulierbare/stabile Einnahmen, Cashflow, Vermoegensaufbau, Risikostreuung, voll vermietete/wenig Leerstand.",
+  einfamilienhaus:
+    "Betone emotionale \"Zuhause\"-Sprache fuer Eigennutzer: Charakter, Atmosphaere, Alltagstauglichkeit, Familie, Ruhe, langfristige Perspektive.",
+  wohnung:
+    "Betone modernen Wohnkomfort fuer Eigennutzer/junge Familien/Paare: Sanierungs-/Ausstattungsdetails, Helligkeit, Grundriss, Wohngefuehl.",
+};
+
+// Distillierte Stilregeln aus echten Makler-Exposé-Texten (als robuster
+// Standard-Fallback, falls der Nutzer keine eigenen Stilbeispiele hinterlegt
+// hat) - siehe Konversation fuer die analysierten Originaltexte.
+const DEFAULT_STYLE_GUIDE =
+  "Schreibe professionell, sachlich-warm und selbstbewusst, aber OHNE reisserische Superlative (kein \"traumhaft\", \"einzigartig\", \"atemberaubend\"). " +
+  "Nutze Merkmal-plus-Nutzen-Saetze (\"X bietet/schafft/verbindet/sorgt fuer Y\"). " +
+  "Ueberschriften gerne mit Doppelpunkt oder Gedankenstrich aufgebaut (\"Kurzes Merkmal: erweiternder Nebensatz\" bzw. \"Merkmal – Nutzen\"). " +
+  "Setze gelegentlich die Aufzaehlungs-Konstruktion \"Ob A, B oder C – ...\" ein, wenn mehrere Nutzungen/Zielgruppen passen. " +
+  "Baue konkrete Zahlen (Quadratmeter, Miete, Baujahr) natuerlich in Fliesstext-Saetze ein, nicht als Stichpunktliste. " +
+  "Schliesse Abschnitte gelegentlich mit einem kurzen, pointierten Satz ab.";
+
+// Struktur-Vorgabe speziell fuer Lage-Abschnitte (kind "lage") - unabhaengig
+// von Stilbeispielen, weil sie den inhaltlichen AUFBAU betrifft, nicht die
+// Wortwahl.
+const LAGE_STRUCTURE_HINT =
+  "Fuer Abschnitte der Art \"lage\": beginne mit der konkreten Lagebeschreibung (Adresse/Stadtteil-Charakter), danach der Charakter der Nachbarschaft/Umgebung, danach erreichbare Einrichtungen (Einkaufen, Schulen, Kindergaerten, Aerzte), danach die Verkehrsanbindung/OePNV, und schliesse mit einem Satz, der die Lage mit einem konkreten Nutzen fuer die Zielgruppe verbindet.";
+
+function buildStyleContext(styleTexts: StyleText[], type: ExposeType): string {
+  const typeHint = TYPE_STYLE_HINT[type];
   if (styleTexts.length === 0) {
-    return "Es wurden keine Stilbeispiele hinterlegt. Schreibe hochwertig, sachlich-emotional und professionell im Stil eines erfahrenen Immobilienmaklers.";
+    return `${DEFAULT_STYLE_GUIDE} ${typeHint} ${LAGE_STRUCTURE_HINT}`;
   }
   const samples = styleTexts
     .map((t) => t.content.trim())
     .filter(Boolean)
     .join("\n\n---\n\n")
     .slice(0, 6000);
-  return `Uebernimm exakt den Schreibstil, Tonfall, Satzbau und Wortwahl aus den folgenden Textbeispielen des Maklers:\n\n${samples}`;
+  return (
+    `Uebernimm exakt den Schreibstil, Tonfall, Satzbau und Wortwahl aus den folgenden Textbeispielen des Maklers (vermeide dabei trotzdem reisserische Superlative, falls die Beispiele das nicht vorgeben):\n\n${samples}\n\n` +
+    `${typeHint} ${LAGE_STRUCTURE_HINT}`
+  );
 }
 
 const TEXT_TOOL = {
@@ -217,6 +253,7 @@ export async function generateImageText(
 
   const system = `Du bist ein erfahrener Immobilien-Texter und erstellst Exposé-Texte fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(
     styleTexts,
+    type,
   )}\n\nSchreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. Antworte ausschliesslich ueber das Werkzeug "expose_text".`;
 
   try {
@@ -1043,7 +1080,7 @@ async function writeSectionTextsChunk(
     .join("\n");
 
   const system =
-    `Du bist ein erfahrener Immobilien-Texter fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(styleTexts)}\n\n` +
+    `Du bist ein erfahrener Immobilien-Texter fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(styleTexts, type)}\n\n` +
     "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts und (falls vorhanden) den folgenden Objektdaten aus hochgeladenen Datenblaettern:\n\n" +
     `${datasheetText.trim().slice(0, 6000) || "(keine Datenblaetter hochgeladen)"}\n\n` +
     "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
