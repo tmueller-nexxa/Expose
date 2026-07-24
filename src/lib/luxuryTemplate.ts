@@ -281,6 +281,10 @@ function exposeMark(): PageElement {
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
     fontFamily: SERIF,
+    // Ohne eigene Hintergrundflaeche (liegt direkt auf dem Titelfoto) -
+    // ohne Schlagschatten auf hellen Fotobereichen (Himmel, helle Fassade)
+    // technisch vorhanden, aber optisch unsichtbar. Siehe TextElement.textShadow.
+    textShadow: true,
   };
 }
 

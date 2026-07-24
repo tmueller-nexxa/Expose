@@ -258,6 +258,10 @@ export function CanvasElement(props: Props) {
                 transform: isLogo
                   ? undefined
                   : `translate(${imgX * 100}%, ${imgY * 100}%) scale(${imgScale})`,
+                // Weiss-invertiertes Logo liegt ohne Hintergrundflaeche direkt
+                // auf dem Titelfoto - ohne Schlagschatten auf hellen
+                // Fotobereichen sonst unsichtbar (analog exposeMark textShadow).
+                filter: isLogo ? "drop-shadow(0 1px 3px rgba(0,0,0,0.55))" : undefined,
               }}
             />
           )}
@@ -285,6 +289,9 @@ export function CanvasElement(props: Props) {
         ...style,
         background: t.background,
         color: t.color,
+        textShadow: t.textShadow
+          ? "0 1px 4px rgba(0,0,0,0.65), 0 0 16px rgba(0,0,0,0.4)"
+          : undefined,
         justifyContent: justify,
         padding: `${pad}px ${pad * 1.2}px`,
         borderRadius: t.background.startsWith("rgba(0,0,0,0") ? 0 : 6,

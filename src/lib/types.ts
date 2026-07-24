@@ -233,6 +233,11 @@ export interface TextElement extends BaseElement {
   // Verweist auf das Bild, zu dem der Text generiert wurde.
   linkedImageId?: string;
   generated?: boolean;
+  // Dunkler Schlagschatten hinter der Schrift - fuer Text OHNE eigene
+  // Hintergrundflaeche (background: transparent), der direkt auf einem Foto
+  // liegt. Ohne das ist heller/weisser Text auf hellen Fotobereichen (z.B.
+  // Himmel, helle Fassade) unsichtbar, obwohl er technisch vorhanden ist.
+  textShadow?: boolean;
 }
 
 export interface LogoElement extends BaseElement {
