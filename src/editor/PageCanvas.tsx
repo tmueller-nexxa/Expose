@@ -27,11 +27,38 @@ export function PageCanvas(props: Props) {
 
   const sorted = [...page.elements].sort((a, b) => a.z - b.z);
 
+  // Ueberlappende Objekte per Alt+Klick durchwaehlen: normale Klicks waehlen
+  // immer nur das OBERSTE Element an dieser Stelle (so funktioniert das DOM-
+  // Stacking automatisch) - liegt z.B. ein transparentes Textfeld ueber einem
+  // Foto, ist das Foto darunter sonst nie per Klick erreichbar (und damit
+  // auch seine Ebene nie ueber die Werkzeugleiste aenderbar). Mit gedrueckter
+  // Alt-Taste wird bei jedem weiteren Klick auf dieselbe Stelle stattdessen
+  // das naechst-tiefere Element ausgewaehlt (zyklisch).
+  function handleCanvasPointerDownCapture(e: React.PointerEvent) {
+    if (!editable || !e.altKey || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const xFrac = (e.clientX - rect.left) / rect.width;
+    const yFrac = (e.clientY - rect.top) / rect.height;
+    const hits = page.elements
+      .filter(
+        (el) =>
+          xFrac >= el.x && xFrac <= el.x + el.w && yFrac >= el.y && yFrac <= el.y + el.h,
+      )
+      .sort((a, b) => b.z - a.z);
+    if (hits.length < 2) return;
+    const curIdx = hits.findIndex((el) => el.id === props.selectedId);
+    const next = hits[(curIdx + 1) % hits.length];
+    e.preventDefault();
+    e.stopPropagation();
+    props.onSelect(next.id);
+  }
+
   return (
     <div
       ref={ref}
       className="page-canvas"
       style={{ width, height, background: page.background }}
+      onPointerDownCapture={handleCanvasPointerDownCapture}
       onPointerDown={() => editable && props.onSelect(null)}
       onDragOver={(e) => {
         if (!editable) return;

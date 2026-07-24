@@ -1168,7 +1168,12 @@ function Inspector({
 
       <div className="sep" />
       <div className="grp">
-        <span className="lbl">Ebene</span>
+        <span
+          className="lbl"
+          title="Liegt ein anderes Objekt darüber und blockiert den Klick? Mit gedrückter Alt-Taste klicken, um das darunterliegende Objekt auszuwählen."
+        >
+          Ebene
+        </span>
         <button className="tool" onClick={() => onReorder("back")} title="Ganz nach hinten">
           ⏷
         </button>
