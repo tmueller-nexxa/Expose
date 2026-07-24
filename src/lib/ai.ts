@@ -858,33 +858,43 @@ const SECTION_KINDS = [
 const SECTION_KIND_SET = new Set<string>(SECTION_KINDS);
 
 // Genug Spielraum fuer echte, granulare Exposé-Strukturen (z.B. je eine
-// eigene Seite pro Raum/Geschoss - 19+ Abschnitte sind bei umfangreichen
-// Beispielen normal), ohne trotzdem uferlos zu werden.
-const MAX_STRUCTURE_SECTIONS = 30;
+// eigene Seite pro Raum/Geschoss - Beispiele mit 20-30 einzeln benannten
+// Seiten sind bei umfangreichen Exposés normal), ohne trotzdem uferlos zu
+// werden.
+const MAX_STRUCTURE_SECTIONS = 35;
+// Wieviele Beispiel-Seiten insgesamt fuer die Struktur-Analyse gelesen
+// werden - MUSS mindestens MAX_ANALYZE_PAGES (KiExposePage.tsx) entsprechen,
+// sonst werden bereits gerenderte Seiten hier still wieder abgeschnitten.
+export const MAX_STRUCTURE_PAGES = 35;
+// Seiten pro Analyse-Anfrage: JEDES Bild wird EINZELN beschrieben (siehe
+// analyzeStructureChunk) statt in einer einzigen, potenziell verlustreichen
+// Zusammenfassung ueber alle Seiten hinweg - kleine Bloecke halten die
+// Anfrage handhabbar und verhindern, dass die KI bei vielen Seiten anfaengt,
+// grosszuegig zu verdichten/wegzulassen.
+const STRUCTURE_CHUNK_SIZE = 6;
 
-const STRUCTURE_TOOL = {
+const PAGE_DESC_TOOL = {
   name: "expose_structure",
   description:
-    "Beschreibt den Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen. Maximal " +
-    MAX_STRUCTURE_SECTIONS +
-    " Abschnitte. Zeigt das Beispiel erkennbar UNTERSCHIEDLICHE, einzeln benannte Bereiche (z.B. je ein Raum, je ein Geschoss) auf separaten Seiten, bleibt das JEWEILS ein eigener Abschnitt - nur wirklich austauschbare Wiederholungen ohne inhaltliche Unterscheidung werden zusammengefasst.",
+    "Beschreibt fuer JEDES uebergebene Bild Art und Titel dieser EINEN Exposé-Seite - keine Farben, Texte oder Positionen.",
   input_schema: {
     type: "object",
     properties: {
       sections: {
         type: "array",
-        description: `Höchstens ${MAX_STRUCTURE_SECTIONS} Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen. Nur Seiten OHNE erkennbare inhaltliche Unterscheidung (z.B. mehrere generische Zimmerfotos ohne eigene Raumbezeichnung) zu einem Abschnitt zusammenfassen - unterschiedlich benannte Räume/Geschosse/Bereiche (z.B. "Grundriss Erdgeschoss" vs. "Grundriss Obergeschoss", oder "Impressionen Schlafzimmer" vs. "Impressionen Badezimmer") bleiben JEWEILS eigene Abschnitte.`,
+        description:
+          "Ergebnis in EXAKT der Reihenfolge der uebergebenen Bilder - GRUNDSAETZLICH ein Eintrag pro Bild. Nur wenn zwei UNMITTELBAR AUFEINANDERFOLGENDE Bilder zweifelsfrei dieselbe Seite oder denselben exakt gleichen Zweck OHNE jede erkennbare inhaltliche Unterscheidung zeigen (z.B. Vorder-/Rueckseite derselben generischen Seite), EIN gemeinsamer Eintrag fuer beide - im Zweifel lieber ein Eintrag pro Bild.",
         items: {
           type: "object",
           properties: {
             kind: { type: "string", enum: [...SECTION_KINDS] },
             title: {
               type: "string",
-              description: "Anzeigename des Abschnitts, moeglichst genau wie im Beispiel (z.B. \"Grundriss Erdgeschoss\", \"Impressionen Obergeschoss (Schlafzimmer & Flur)\").",
+              description: "Anzeigename dieser Seite, moeglichst genau wie im Beispiel (z.B. \"Grundriss Erdgeschoss\", \"Impressionen Obergeschoss (Schlafzimmer & Flur)\").",
             },
             photoCount: {
               type: "number",
-              description: "Typische Anzahl Fotos auf dieser Seite im Beispiel.",
+              description: "Anzahl Fotos auf dieser Seite im Beispiel.",
             },
           },
           required: ["kind", "title"],
@@ -895,6 +905,53 @@ const STRUCTURE_TOOL = {
   },
 };
 
+interface RawStructureEntry {
+  kind?: string;
+  title?: string;
+  photoCount?: number;
+}
+
+async function analyzeStructureChunk(
+  api: ApiSettings,
+  chunk: string[],
+  type: ExposeType,
+): Promise<RawStructureEntry[] | AiError> {
+  const { blocks: imageBlocks } = await buildImageBlocks(chunk);
+  if (imageBlocks.length === 0) return [];
+
+  const system =
+    `Du beschreibst einzelne Seiten eines Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
+    "Fuer JEDES uebergebene Bild: welche ART von Inhaltsseite ist das (Titelseite, Willkommen/Einleitung, Eckdaten, Highlights, Objektbeschreibung/Impressionen je Raum, Grundriss je Geschoss, Lage, Ausstattung, Galerie, Kontakt, Sonstiges) und was ist ihr TITEL/Thema? " +
+    "Beschreibe JEDES Bild EINZELN fuer sich, auch wenn mehrere Bilder aehnlich aussehen (z.B. mehrere Zimmer) - nur bei zweifelsfrei IDENTISCHEM Zweck OHNE jede inhaltliche Unterscheidung zwischen zwei DIREKT AUFEINANDERFOLGENDEN Bildern zu einem Eintrag zusammenfassen, sonst immer ein Eintrag pro Bild. " +
+    "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett. " +
+    "Verwende echte deutsche Umlaute und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. " +
+    "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
+
+  const data = await callAnthropic(api, {
+    model: api.model,
+    max_tokens: 1500,
+    system,
+    tools: [PAGE_DESC_TOOL],
+    tool_choice: { type: "tool", name: "expose_structure" },
+    messages: [
+      {
+        role: "user",
+        content: [
+          ...imageBlocks,
+          {
+            type: "text",
+            text: `Hier sind ${imageBlocks.length} Seite(n) eines Beispiel-Exposés. Beschreibe jede Seite einzeln.`,
+          },
+        ],
+      },
+    ],
+  });
+
+  const tool = data.content.find((c) => c.type === "tool_use");
+  const input = tool?.input as { sections?: RawStructureEntry[] } | undefined;
+  return input?.sections ?? [];
+}
+
 export async function analyzeExposeStructure(
   api: ApiSettings,
   pageImages: string[],
@@ -904,61 +961,86 @@ export async function analyzeExposeStructure(
   if (pageImages.length === 0)
     return { ok: false, message: "Keine Inhaltsseiten im Beispiel gefunden." };
 
-  const imgs = pageImages.slice(0, 20);
-  const { blocks: imageBlocks } = await buildImageBlocks(imgs);
-  if (imageBlocks.length === 0)
+  const imgs = pageImages.slice(0, MAX_STRUCTURE_PAGES);
+  const allEntries: RawStructureEntry[] = [];
+  let firstError = "";
+
+  for (let start = 0; start < imgs.length; start += STRUCTURE_CHUNK_SIZE) {
+    const chunk = imgs.slice(start, start + STRUCTURE_CHUNK_SIZE);
+    let result: RawStructureEntry[] | null = null;
+    let err = "";
+    for (let attempt = 1; attempt <= 3 && !result; attempt++) {
+      try {
+        const res = await analyzeStructureChunk(api, chunk, type);
+        if (Array.isArray(res)) {
+          result = res;
+        } else {
+          err = res.message;
+        }
+      } catch (e) {
+        err = (e as Error).message;
+      }
+      if (!result && attempt < 3) await sleep(800 * attempt);
+    }
+    if (result) {
+      allEntries.push(...result);
+    } else {
+      firstError = firstError || err || "unbekannt";
+    }
+  }
+
+  if (allEntries.length === 0) {
     return {
       ok: false,
-      message:
-        "Die Beispiel-Seiten konnten nicht gelesen werden (Bilddaten sind leer). Bitte Beispiel-Datei im Datenbereich erneut hochladen.",
+      message: firstError
+        ? firstError
+        : "Die Beispiel-Seiten konnten nicht gelesen werden (Bilddaten sind leer). Bitte Beispiel-Datei im Datenbereich erneut hochladen.",
     };
-
-  const system =
-    `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
-    "Beschreibe den Seitenaufbau: welche Inhaltsseiten kommen in welcher Reihenfolge vor, mit ihrem JEWEILIGEN Zweck/Thema (z.B. Titelseite, Willkommen, Eckdaten, Highlights, Impressionen je Raum, Grundriss je Geschoss, Lage, Kontakt)? " +
-    "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. " +
-    `WICHTIG: Liefere HÖCHSTENS ${MAX_STRUCTURE_SECTIONS} Abschnitte. Behalte dabei die tatsaechliche Granularitaet des Beispiels bei: zeigt es erkennbar UNTERSCHIEDLICHE, einzeln benannte Bereiche auf separaten Seiten (z.B. "Grundriss Erdgeschoss" UND "Grundriss Obergeschoss" UND "Grundriss Kellergeschoss", oder "Impressionen Schlafzimmer" UND "Impressionen Badezimmer" UND "Impressionen Küche"), bleibt JEDER dieser Bereiche ein EIGENER Abschnitt mit eigenem, moeglichst genauem Titel - NICHT zu einem generischen Abschnitt zusammenfassen. Nur wirklich AUSTAUSCHBARE Wiederholungen ohne eigene inhaltliche Unterscheidung (z.B. drei Seiten mit demselben generischen Zweck und ohne erkennbare Raum-/Bereichsbezeichnung) zu EINEM Abschnitt zusammenfassen. Uebersteigt das Beispiel trotzdem das Limit, fasse zuerst die am wenigsten unterscheidbaren Abschnitte zusammen, nicht die klar benannten. ` +
-    "Verwende in den Abschnittstiteln echte deutsche Umlaute und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. " +
-    "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
-
-  try {
-    const data = await callAnthropic(api, {
-      model: api.model,
-      max_tokens: 3500,
-      system,
-      tools: [STRUCTURE_TOOL],
-      tool_choice: { type: "tool", name: "expose_structure" },
-      messages: [
-        {
-          role: "user",
-          content: [
-            ...imageBlocks,
-            {
-              type: "text",
-              text: `Hier sind ${imageBlocks.length} Inhaltsseite(n) eines Beispiel-Exposés. Beschreibe den groben Seitenaufbau.`,
-            },
-          ],
-        },
-      ],
-    });
-
-    const tool = data.content.find((c) => c.type === "tool_use");
-    const input = tool?.input as
-      | { sections?: { kind?: string; title?: string; photoCount?: number }[] }
-      | undefined;
-    const raw = input?.sections ?? [];
-    if (raw.length === 0)
-      return { ok: false, message: "Die KI konnte keinen Seitenaufbau ableiten." };
-
-    const sections: ExposeSection[] = raw.slice(0, MAX_STRUCTURE_SECTIONS).map((s) => ({
-      kind: (SECTION_KIND_SET.has(String(s.kind)) ? s.kind : "sonstiges") as ExposeSectionKind,
-      title: String(s.title ?? "Abschnitt").slice(0, 100),
-      photoCount: clamp(Math.round(Number(s.photoCount) || 1), 0, 6),
-    }));
-    return { ok: true, sections };
-  } catch (err) {
-    return { ok: false, message: (err as Error).message };
   }
+
+  // Sicherheitsnetz: unmittelbar benachbarte Eintraege mit identischer
+  // Art+Titel zusammenfassen (z.B. falls dieselbe Seite an einer
+  // Block-Grenze doppelt beschrieben wurde).
+  const merged: RawStructureEntry[] = [];
+  for (const e of allEntries) {
+    const prev = merged[merged.length - 1];
+    const sameAsPrev =
+      prev &&
+      String(prev.kind) === String(e.kind) &&
+      String(prev.title ?? "").trim().toLowerCase() === String(e.title ?? "").trim().toLowerCase();
+    if (sameAsPrev && prev) {
+      prev.photoCount = (Number(prev.photoCount) || 1) + (Number(e.photoCount) || 1);
+    } else {
+      merged.push({ ...e });
+    }
+  }
+
+  // Uebersteigt das Ergebnis trotzdem das Limit: zuerst benachbarte
+  // Eintraege DERSELBEN Art zusammenfassen (am wenigsten unterscheidbar),
+  // nicht einfach abschneiden.
+  while (merged.length > MAX_STRUCTURE_SECTIONS) {
+    let mergedAny = false;
+    for (let i = 0; i < merged.length - 1; i++) {
+      if (String(merged[i].kind) === String(merged[i + 1].kind)) {
+        merged[i] = {
+          kind: merged[i].kind,
+          title: merged[i].title,
+          photoCount: (Number(merged[i].photoCount) || 1) + (Number(merged[i + 1].photoCount) || 1),
+        };
+        merged.splice(i + 1, 1);
+        mergedAny = true;
+        break;
+      }
+    }
+    if (!mergedAny) break;
+  }
+
+  const sections: ExposeSection[] = merged.slice(0, MAX_STRUCTURE_SECTIONS).map((s) => ({
+    kind: (SECTION_KIND_SET.has(String(s.kind)) ? s.kind : "sonstiges") as ExposeSectionKind,
+    title: String(s.title ?? "Abschnitt").slice(0, 100),
+    photoCount: clamp(Math.round(Number(s.photoCount) || 1), 0, 6),
+  }));
+  return { ok: true, sections };
 }
 
 // --- "KI Exposé": Fotos den Seitenabschnitten zuordnen --------------------

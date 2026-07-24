@@ -13,6 +13,7 @@ import {
   aiReady,
   analyzeExposeStructure,
   analyzePhotoSections,
+  MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
   writeExposeSectionTexts,
 } from "../lib/ai";
@@ -35,10 +36,12 @@ import {
 import "./DataPage.css";
 import "./KiExposePage.css";
 
-// Genug Spielraum, um auch umfangreiche Beispiel-Exposés (z.B. mit je einer
-// eigenen Seite pro Raum/Geschoss) vollstaendig fuer die Struktur-Analyse
-// zu erfassen (siehe MAX_STRUCTURE_SECTIONS in ai.ts).
-const MAX_ANALYZE_PAGES = 30;
+// Dieselbe Konstante wie in ai.ts (dort re-exportiert) verwenden, statt
+// eine eigene, potenziell abweichende Obergrenze zu pflegen - genau ein
+// solches Auseinanderlaufen (hier 30, dort intern noch 20) hat zuvor dazu
+// gefuehrt, dass bereits gerenderte Beispiel-Seiten in der Struktur-Analyse
+// still wieder abgeschnitten wurden.
+const MAX_ANALYZE_PAGES = MAX_STRUCTURE_PAGES;
 
 const TYPE_LABEL: Record<ExposeType, string> = {
   einfamilienhaus: "Einfamilienhaus",

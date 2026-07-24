@@ -261,8 +261,10 @@ function heroLogoBadge(logo: StoredFile | null): PageElement[] {
 
 // Grosser "Exposé"-Schriftzug oben links auf dem Titelfoto, in der
 // Schwungschrift - statischer Marken-/Rubrik-Schriftzug, kein KI-generierter
-// Inhalt, darum ohne den Auto-Schrumpf-Mechanismus von heading(). Fester
-// z-Wert oberhalb von IMAGE_Z (2), aus demselben Grund wie beim Logo-Badge.
+// Inhalt, darum ohne den Auto-Schrumpf-Mechanismus von heading(). z:4 ist
+// BEWUSST hoeher als das Logo-Badge (z:3) und alles andere auf der
+// Titelseite - der Schriftzug soll immer die oberste Ebene sein, nie von
+// etwas anderem verdeckt werden.
 function exposeMark(): PageElement {
   return {
     id: uid("el"),
@@ -271,7 +273,7 @@ function exposeMark(): PageElement {
     y: 0.035,
     w: 0.6,
     h: 0.09,
-    z: 3,
+    z: 4,
     text: "Exposé",
     fontSize: Math.round(30 * SCRIPT_SCALE),
     align: "left",
