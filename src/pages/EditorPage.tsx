@@ -259,6 +259,57 @@ export function EditorPage() {
     return m;
   }, []);
 
+  const minZ = useCallback(() => {
+    const cur = projectRef.current;
+    if (!cur) return 0;
+    let m = 0;
+    for (const pg of cur.pages)
+      for (const e of pg.elements) if (e.z < m) m = e.z;
+    return m;
+  }, []);
+
+  // Ebenen-Reihenfolge aendern - gilt gleichermassen fuer alle Elementarten
+  // (Texte, Hintergrundflaechen/Formen, Bilder, Logo), da die Stapel-
+  // reihenfolge unabhaengig von der Art des Elements ist.
+  const reorderElement = useCallback(
+    (elId: string, mode: "front" | "back" | "forward" | "backward") => {
+      if (mode === "front") {
+        patchElement(elId, { z: maxZ() + 1 });
+        return;
+      }
+      if (mode === "back") {
+        patchElement(elId, { z: minZ() - 1 });
+        return;
+      }
+      // Vorwaerts/rueckwaerts: mit dem direkten Nachbarn in der aktuellen
+      // Stapelreihenfolge dieser Seite die z-Werte tauschen.
+      const cur = projectRef.current;
+      const pg = cur?.pages[pageIndex];
+      const el = pg?.elements.find((e) => e.id === elId);
+      if (!pg || !el) return;
+      const sorted = [...pg.elements].sort((a, b) => a.z - b.z);
+      const idx = sorted.findIndex((e) => e.id === elId);
+      const neighbor = sorted[mode === "forward" ? idx + 1 : idx - 1];
+      if (!neighbor) return; // bereits ganz vorn/hinten auf dieser Seite
+      const elZ = el.z;
+      const neighborZ = neighbor.z;
+      mutatePages((pages) =>
+        pages.map((p, i) => {
+          if (i !== pageIndex) return p;
+          return {
+            ...p,
+            elements: p.elements.map((e) => {
+              if (e.id === el.id) return { ...e, z: neighborZ };
+              if (e.id === neighbor.id) return { ...e, z: elZ };
+              return e;
+            }),
+          };
+        }),
+      );
+    },
+    [maxZ, minZ, mutatePages, patchElement, pageIndex],
+  );
+
   // --- Drop-Handler ------------------------------------------------------
   async function dropFileToElement(elId: string, file: File) {
     if (!file.type.startsWith("image/")) {
@@ -834,7 +885,7 @@ export function EditorPage() {
               onEdit={() => {
                 setEditingId(selected.id);
               }}
-              onFront={() => patchElement(selected.id, { z: maxZ() + 1 })}
+              onReorder={(mode) => reorderElement(selected.id, mode)}
               onErasePhoto={
                 selected.kind === "image" &&
                 page.elements.some(
@@ -920,14 +971,14 @@ function Inspector({
   onPatch,
   onDelete,
   onEdit,
-  onFront,
+  onReorder,
   onErasePhoto,
 }: {
   element: PageElement;
   onPatch: (patch: Partial<PageElement>) => void;
   onDelete: () => void;
   onEdit: () => void;
-  onFront: () => void;
+  onReorder: (mode: "front" | "back" | "forward" | "backward") => void;
   onErasePhoto?: () => void;
 }) {
   const isText = element.kind === "text" || element.kind === "heading";
@@ -1116,9 +1167,22 @@ function Inspector({
       )}
 
       <div className="sep" />
-      <button className="tool" onClick={onFront} title="In den Vordergrund">
-        ⬆
-      </button>
+      <div className="grp">
+        <span className="lbl">Ebene</span>
+        <button className="tool" onClick={() => onReorder("back")} title="Ganz nach hinten">
+          ⏷
+        </button>
+        <button className="tool" onClick={() => onReorder("backward")} title="Eine Ebene nach hinten">
+          ▼
+        </button>
+        <button className="tool" onClick={() => onReorder("forward")} title="Eine Ebene nach vorne">
+          ▲
+        </button>
+        <button className="tool" onClick={() => onReorder("front")} title="Ganz nach vorne">
+          ⏶
+        </button>
+      </div>
+      <div className="sep" />
       <button
         className="btn btn-danger"
         onClick={onDelete}
