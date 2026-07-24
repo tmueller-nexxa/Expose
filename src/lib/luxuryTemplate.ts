@@ -601,40 +601,46 @@ export function buildLuxuryPages(
 
   for (const { section, photos, headline, text } of inputs) {
     const title = headline || section.title;
+    let built: Page;
     // "Eckdaten" bekommt unabhaengig von der erkannten Art (meist "sonstiges"
     // oder "objektbeschreibung") immer die dedizierte Fakten-Vorlage, nicht
     // die generische Text-/Foto-Seite.
     if (ECKDATEN_TITLE_RE.test(section.title) && section.kind !== "titel" && section.kind !== "kontakt") {
-      pages.push(eckdatenPage(title, text));
-      continue;
+      built = eckdatenPage(title, text);
+    } else {
+      switch (section.kind) {
+        case "titel":
+          built = titlePage(title, text, photos, heroLogo, TYPE_LABEL[type]);
+          break;
+        case "grundriss":
+          built = grundrissPage(title, text, photos);
+          break;
+        case "galerie":
+          built = galeriePage(title, photos);
+          break;
+        case "kontakt":
+          if (pendingEnergieausweis) {
+            pages.push({ ...documentPage("Energieausweis", pendingEnergieausweis), title: "Energieausweis" });
+            pendingEnergieausweis = null;
+          }
+          built = kontaktPage(logo, photos);
+          break;
+        default:
+          if (photos.length === 0) {
+            built = textOnlyPage(title, text);
+          } else if (photos.length >= 3) {
+            built = stackedPage(title, text, photos);
+          } else {
+            built = twoColPage(title, text, photos, altSide);
+            altSide = !altSide;
+          }
+      }
     }
-    switch (section.kind) {
-      case "titel":
-        pages.push(titlePage(title, text, photos, heroLogo, TYPE_LABEL[type]));
-        break;
-      case "grundriss":
-        pages.push(grundrissPage(title, text, photos));
-        break;
-      case "galerie":
-        pages.push(galeriePage(title, photos));
-        break;
-      case "kontakt":
-        if (pendingEnergieausweis) {
-          pages.push(documentPage("Energieausweis", pendingEnergieausweis));
-          pendingEnergieausweis = null;
-        }
-        pages.push(kontaktPage(logo, photos));
-        break;
-      default:
-        if (photos.length === 0) {
-          pages.push(textOnlyPage(title, text));
-        } else if (photos.length >= 3) {
-          pages.push(stackedPage(title, text, photos));
-        } else {
-          pages.push(twoColPage(title, text, photos, altSide));
-          altSide = !altSide;
-        }
-    }
+    // Die Miniaturansicht/Seiten-Beschriftung zeigt IMMER den urspruenglich
+    // ausgelesenen Abschnittsnamen (nicht die kreative KI-Überschrift) -
+    // damit 1:1 nachvollziehbar bleibt, welche Seite zu welchem Abschnitt
+    // des analysierten Seitenaufbaus gehoert.
+    pages.push({ ...built, title: section.title });
   }
 
   // Kein Kontakt-Abschnitt in der Struktur gefunden (Sonderfall) - Energie-

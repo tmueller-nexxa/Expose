@@ -35,7 +35,10 @@ import {
 import "./DataPage.css";
 import "./KiExposePage.css";
 
-const MAX_ANALYZE_PAGES = 20;
+// Genug Spielraum, um auch umfangreiche Beispiel-Exposés (z.B. mit je einer
+// eigenen Seite pro Raum/Geschoss) vollstaendig fuer die Struktur-Analyse
+// zu erfassen (siehe MAX_STRUCTURE_SECTIONS in ai.ts).
+const MAX_ANALYZE_PAGES = 30;
 
 const TYPE_LABEL: Record<ExposeType, string> = {
   einfamilienhaus: "Einfamilienhaus",

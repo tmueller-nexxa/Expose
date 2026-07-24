@@ -857,27 +857,30 @@ const SECTION_KINDS = [
 ] as const;
 const SECTION_KIND_SET = new Set<string>(SECTION_KINDS);
 
-const MAX_STRUCTURE_SECTIONS = 10;
+// Genug Spielraum fuer echte, granulare Exposé-Strukturen (z.B. je eine
+// eigene Seite pro Raum/Geschoss - 19+ Abschnitte sind bei umfangreichen
+// Beispielen normal), ohne trotzdem uferlos zu werden.
+const MAX_STRUCTURE_SECTIONS = 30;
 
 const STRUCTURE_TOOL = {
   name: "expose_structure",
   description:
-    "Beschreibt NUR den groben, wiederkehrenden Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen. Maximal " +
+    "Beschreibt den Seitenaufbau eines Immobilien-Exposés (Reihenfolge und Zweck der Inhaltsseiten) - keine Farben, Texte oder Positionen. Maximal " +
     MAX_STRUCTURE_SECTIONS +
-    " zusammengefasste Abschnitte, NICHT eine Seite = ein Abschnitt.",
+    " Abschnitte. Zeigt das Beispiel erkennbar UNTERSCHIEDLICHE, einzeln benannte Bereiche (z.B. je ein Raum, je ein Geschoss) auf separaten Seiten, bleibt das JEWEILS ein eigener Abschnitt - nur wirklich austauschbare Wiederholungen ohne inhaltliche Unterscheidung werden zusammengefasst.",
   input_schema: {
     type: "object",
     properties: {
       sections: {
         type: "array",
-        description: `Höchstens ${MAX_STRUCTURE_SECTIONS} Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen - mehrere gleichartige Seiten (z.B. mehrere Zimmerfotos) zaehlen als EIN Abschnitt.`,
+        description: `Höchstens ${MAX_STRUCTURE_SECTIONS} Abschnitte in der Reihenfolge, wie sie im Beispiel vorkommen. Nur Seiten OHNE erkennbare inhaltliche Unterscheidung (z.B. mehrere generische Zimmerfotos ohne eigene Raumbezeichnung) zu einem Abschnitt zusammenfassen - unterschiedlich benannte Räume/Geschosse/Bereiche (z.B. "Grundriss Erdgeschoss" vs. "Grundriss Obergeschoss", oder "Impressionen Schlafzimmer" vs. "Impressionen Badezimmer") bleiben JEWEILS eigene Abschnitte.`,
         items: {
           type: "object",
           properties: {
             kind: { type: "string", enum: [...SECTION_KINDS] },
             title: {
               type: "string",
-              description: "Anzeigename des Abschnitts, z.B. \"Lage & Umgebung\".",
+              description: "Anzeigename des Abschnitts, moeglichst genau wie im Beispiel (z.B. \"Grundriss Erdgeschoss\", \"Impressionen Obergeschoss (Schlafzimmer & Flur)\").",
             },
             photoCount: {
               type: "number",
@@ -912,16 +915,16 @@ export async function analyzeExposeStructure(
 
   const system =
     `Du analysierst den Seitenaufbau von Immobilien-Exposés (${TYPE_LABEL[type]}). ` +
-    "Beschreibe NUR die grobe, wiederkehrende Struktur: welche Arten von Inhaltsseiten kommen in welcher Reihenfolge vor (z.B. Titelseite, Objektbeschreibung, Lage, Ausstattung, Grundriss, Galerie, Kontakt)? " +
+    "Beschreibe den Seitenaufbau: welche Inhaltsseiten kommen in welcher Reihenfolge vor, mit ihrem JEWEILIGEN Zweck/Thema (z.B. Titelseite, Willkommen, Eckdaten, Highlights, Impressionen je Raum, Grundriss je Geschoss, Lage, Kontakt)? " +
     "Ignoriere Farben, Schriften, genaue Texte und Positionen komplett - es geht nur um Reihenfolge und Zweck der Seiten. " +
-    `WICHTIG: Liefere HÖCHSTENS ${MAX_STRUCTURE_SECTIONS} Abschnitte, auch wenn das Beispiel mehr Seiten hat - fasse konsequent zusammen (z.B. ALLE Zimmer-/Raumfotos zu EINEM Abschnitt "Objektbeschreibung"/"Innenräume", ALLE Außenaufnahmen zu EINEM Abschnitt "Außenansicht"/"Lage", ALLE Grundriss-Seiten zu EINEM Abschnitt "Grundriss"). Eine Seite = ein Abschnitt ist FALSCH, wenn mehrere Seiten denselben Zweck haben. ` +
+    `WICHTIG: Liefere HÖCHSTENS ${MAX_STRUCTURE_SECTIONS} Abschnitte. Behalte dabei die tatsaechliche Granularitaet des Beispiels bei: zeigt es erkennbar UNTERSCHIEDLICHE, einzeln benannte Bereiche auf separaten Seiten (z.B. "Grundriss Erdgeschoss" UND "Grundriss Obergeschoss" UND "Grundriss Kellergeschoss", oder "Impressionen Schlafzimmer" UND "Impressionen Badezimmer" UND "Impressionen Küche"), bleibt JEDER dieser Bereiche ein EIGENER Abschnitt mit eigenem, moeglichst genauem Titel - NICHT zu einem generischen Abschnitt zusammenfassen. Nur wirklich AUSTAUSCHBARE Wiederholungen ohne eigene inhaltliche Unterscheidung (z.B. drei Seiten mit demselben generischen Zweck und ohne erkennbare Raum-/Bereichsbezeichnung) zu EINEM Abschnitt zusammenfassen. Uebersteigt das Beispiel trotzdem das Limit, fasse zuerst die am wenigsten unterscheidbaren Abschnitte zusammen, nicht die klar benannten. ` +
     "Verwende in den Abschnittstiteln echte deutsche Umlaute und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren. " +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_structure\".";
 
   try {
     const data = await callAnthropic(api, {
       model: api.model,
-      max_tokens: 1500,
+      max_tokens: 3500,
       system,
       tools: [STRUCTURE_TOOL],
       tool_choice: { type: "tool", name: "expose_structure" },
@@ -949,7 +952,7 @@ export async function analyzeExposeStructure(
 
     const sections: ExposeSection[] = raw.slice(0, MAX_STRUCTURE_SECTIONS).map((s) => ({
       kind: (SECTION_KIND_SET.has(String(s.kind)) ? s.kind : "sonstiges") as ExposeSectionKind,
-      title: String(s.title ?? "Abschnitt").slice(0, 60),
+      title: String(s.title ?? "Abschnitt").slice(0, 100),
       photoCount: clamp(Math.round(Number(s.photoCount) || 1), 0, 6),
     }));
     return { ok: true, sections };
