@@ -16,7 +16,7 @@ import {
   IMAGE_Z,
   projectStamp,
 } from "../lib/templates";
-import { loadProject, saveProject } from "../lib/storage";
+import { loadProject, saveProject, saveProjectNow } from "../lib/storage";
 import { generateImageText, generatePageText } from "../lib/ai";
 import { EXPOSE_FONTS, EXPOSE_LIGHT_GREY, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
@@ -80,6 +80,7 @@ export function EditorPage() {
     null,
   );
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
   const [canvasWidth, setCanvasWidth] = useState(560);
   const [thumbRailWidth, setThumbRailWidth] = useState(loadThumbRailWidth);
   // Es liegt eine neuere Beispiel-Struktur vor als das offene Projekt.
@@ -312,6 +313,57 @@ export function EditorPage() {
   function flash(msg: string, err = false) {
     setToast({ msg, err });
     window.setTimeout(() => setToast(null), err ? 5000 : 3500);
+  }
+
+  // Entfernt eine komplette Seite (nicht nur ein einzelnes Element) aus dem
+  // Exposé - mit Rueckfrage, da nicht rueckgaengig zu machen. Verschiebt die
+  // aktuelle Auswahl sinnvoll mit, falls die aktive oder eine davor liegende
+  // Seite geloescht wird.
+  function deletePage(index: number) {
+    const cur = projectRef.current;
+    if (!cur) return;
+    if (cur.pages.length <= 1) {
+      flash("Die letzte verbleibende Seite kann nicht gelöscht werden.", true);
+      return;
+    }
+    const pg = cur.pages[index];
+    if (!pg) return;
+    if (
+      !window.confirm(
+        `Seite ${index + 1} ("${pg.title}") wirklich löschen? Das kann nicht rückgängig gemacht werden.`,
+      )
+    ) {
+      return;
+    }
+    const newLen = cur.pages.length - 1;
+    mutatePages((pages) => pages.filter((_, i) => i !== index));
+    setSelectedId(null);
+    setEditingId(null);
+    setPageIndex((prev) => {
+      if (prev > index) return prev - 1;
+      if (prev === index) return Math.min(prev, newLen - 1);
+      return prev;
+    });
+    flash("Seite gelöscht.");
+  }
+
+  // Speichert das Exposé sofort (statt auf den ueblichen Debounce fuer
+  // laufende Interaktions-Edits zu warten) - gibt dem Nutzer eine
+  // verlaessliche, sichtbare Bestaetigung, dass der aktuelle Stand wirklich
+  // persistiert ist, statt sich auf das unsichtbare Auto-Save verlassen zu
+  // muessen.
+  async function handleSaveNow() {
+    const cur = projectRef.current;
+    if (!cur) return;
+    setSaving(true);
+    try {
+      await saveProjectNow(cur);
+      flash("Exposé gespeichert.");
+    } catch (e) {
+      flash(`Speichern fehlgeschlagen: ${(e as Error).message}`, true);
+    } finally {
+      setSaving(false);
+    }
   }
 
   // Entfernt (uebermalt) den Bereich unter einem Platzhalter direkt aus dem
@@ -691,6 +743,14 @@ export function EditorPage() {
         </button>
         <button
           className="btn btn-outline"
+          onClick={handleSaveNow}
+          disabled={saving}
+          title="Aktuellen Stand des Exposés sofort speichern"
+        >
+          <IconCheck size={18} /> {saving ? "Speichert …" : "Speichern"}
+        </button>
+        <button
+          className="btn btn-outline"
           onClick={() => window.print()}
           title="Als PDF exportieren"
         >
@@ -822,6 +882,17 @@ export function EditorPage() {
                   onDropFileToElement={() => {}}
                   onDropFileToCanvas={() => {}}
                 />
+                <button
+                  type="button"
+                  className="thumb-delete-btn"
+                  title="Seite löschen"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deletePage(i);
+                  }}
+                >
+                  <IconTrash size={13} />
+                </button>
               </div>
               <div className="num-label">
                 {i + 1} · {pg.title}

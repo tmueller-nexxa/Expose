@@ -295,8 +295,13 @@ export function KiExposePage() {
       // Fotos direkt dem zugewiesenen Abschnitt zuordnen; alles ohne
       // passenden Abschnitt oder ueber dem Kappungslimit geht in eine
       // Galerie-Seite statt verworfen zu werden.
+      // "Grundriss" bekommt bewusst ein hohes Limit: die Struktur-Analyse
+      // fasst mehrere Grundriss-Seiten (z.B. Keller-, Erd-, Obergeschoss) zu
+      // EINEM Abschnitt zusammen (siehe analyzeExposeStructure-Prompt) - der
+      // Abschnitt muss darum alle zugehoerigen Grundriss-Bilder aufnehmen
+      // koennen, nicht nur eines.
       const capFor = (kind: (typeof sections)[number]["kind"]) =>
-        kind === "titel" ? 1 : kind === "grundriss" ? 1 : kind === "galerie" || kind === "kontakt" ? 4 : 3;
+        kind === "titel" ? 1 : kind === "grundriss" ? 6 : kind === "galerie" || kind === "kontakt" ? 4 : 3;
       const bySection: { src: string; caption: string }[][] = sections.map(() => []);
       const overflow: string[] = [];
       photoPool.forEach((src, i) => {

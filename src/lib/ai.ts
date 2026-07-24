@@ -186,10 +186,22 @@ const DEFAULT_STYLE_GUIDE =
 const LAGE_STRUCTURE_HINT =
   "Fuer Abschnitte der Art \"lage\": beginne mit der konkreten Lagebeschreibung (Adresse/Stadtteil-Charakter), danach der Charakter der Nachbarschaft/Umgebung, danach erreichbare Einrichtungen (Einkaufen, Schulen, Kindergaerten, Aerzte), danach die Verkehrsanbindung/OePNV, und schliesse mit einem Satz, der die Lage mit einem konkreten Nutzen fuer die Zielgruppe verbindet.";
 
+// Der Text des "titel"-Abschnitts landet als Untertitel/Hook direkt auf dem
+// Titelfoto - dort wirkt ein neutraler Beschreibungsabsatz fehl am Platz;
+// es soll wie der Anreisser eines Verkaufsexposés klingen.
+const TITEL_HOOK_HINT =
+  "Fuer den Abschnitt der Art \"titel\" (Titelseite): schreibe KEINEN neutralen Beschreibungstext, sondern einen kurzen, wirkungsvollen Verkaufs-Hook (maximal 1-2 Saetze), der das staerkste Alleinstellungsmerkmal der Immobilie hervorhebt und Lust auf mehr macht - wie der Anreisser auf dem Titel eines Verkaufsexposés, nicht wie ein Fliesstext-Absatz.";
+
+// Fuer einen Abschnitt mit einem Titel wie "WOW-Effekt"/"Highlight" (falls
+// im abgeleiteten Seitenaufbau vorhanden): keine gewoehnliche Beschreibung,
+// sondern eine kompakte AUFZAEHLUNG der staerksten Verkaufsargumente.
+const WOW_EFFECT_HINT =
+  "Fuer einen Abschnitt mit einem Titel wie \"WOW-Effekt\" oder \"Highlight\": zaehle kompakt ALLE wichtigen Verkaufsargumente und Vorteile der Immobilie auf (z.B. als kurze, pointierte Saetze oder Aufzaehlung), statt nur einen einzelnen Aspekt zu beschreiben - diese Seite soll auf einen Blick zeigen, warum sich die Immobilie besonders lohnt.";
+
 function buildStyleContext(styleTexts: StyleText[], type: ExposeType): string {
   const typeHint = TYPE_STYLE_HINT[type];
   if (styleTexts.length === 0) {
-    return `${DEFAULT_STYLE_GUIDE} ${typeHint} ${LAGE_STRUCTURE_HINT}`;
+    return `${DEFAULT_STYLE_GUIDE} ${typeHint} ${LAGE_STRUCTURE_HINT} ${TITEL_HOOK_HINT} ${WOW_EFFECT_HINT}`;
   }
   const samples = styleTexts
     .map((t) => t.content.trim())
@@ -198,7 +210,7 @@ function buildStyleContext(styleTexts: StyleText[], type: ExposeType): string {
     .slice(0, 6000);
   return (
     `Uebernimm exakt den Schreibstil, Tonfall, Satzbau und Wortwahl aus den folgenden Textbeispielen des Maklers (vermeide dabei trotzdem reisserische Superlative, falls die Beispiele das nicht vorgeben):\n\n${samples}\n\n` +
-    `${typeHint} ${LAGE_STRUCTURE_HINT}`
+    `${typeHint} ${LAGE_STRUCTURE_HINT} ${TITEL_HOOK_HINT} ${WOW_EFFECT_HINT}`
   );
 }
 
@@ -1007,7 +1019,9 @@ async function analyzePhotoSectionsChunk(
     "Du ordnest Immobilienfotos den konkreten Abschnitten eines Exposés zu. " +
     `Folgende Abschnitte stehen zur Auswahl (Index. "Titel" (Art)):\n${sectionsDesc}\n\n` +
     "Waehle pro Foto den inhaltlich am besten passenden Abschnitt anhand von TITEL UND Art - mehrere Abschnitte koennen dieselbe Art haben (z.B. \"Küche\" und \"Bad\" sind beide \"ausstattung\"), dann entscheidet allein der Titel, welcher Abschnitt inhaltlich zum Fotoinhalt passt (ein Badezimmerfoto gehoert zum Abschnitt \"Bad\", NICHT zu \"Küche\", auch wenn beide dieselbe Art haben). " +
-    "WICHTIG: Ein Abschnitt der Art \"titel\" ist die Titelseite und braucht ein repraesentatives Aussen-/Uebersichtsfoto (Fassade, Luftaufnahme, Gesamtansicht des Gebaeudes von aussen) - ist unter den hier gezeigten Fotos ein geeignetes Aussen-/Uebersichtsfoto, ordne es bevorzugt dem \"titel\"-Abschnitt zu, auch wenn dessen Abschnittstitel das nicht woertlich sagt (z.B. eine kreative Ueberschrift wie \"Ihr neues Zuhause\"). " +
+    "WICHTIG: Ein Abschnitt der Art \"titel\" ODER mit einem Titel wie \"Willkommen\" ist die Titel-/Willkommensseite und braucht ein repraesentatives Aussen-/Uebersichtsfoto (Fassade, Luftaufnahme, Gesamtansicht des Gebaeudes von aussen) - ist unter den hier gezeigten Fotos ein geeignetes Aussen-/Uebersichtsfoto, ordne es bevorzugt diesem Abschnitt zu, auch wenn dessen Abschnittstitel das nicht woertlich sagt (z.B. eine kreative Ueberschrift wie \"Ihr neues Zuhause\"). " +
+    "Ein Abschnitt mit einem Titel wie \"WOW-Effekt\"/\"Highlight\" braucht GENAU EIN besonders eindrucksvolles, repraesentatives Foto, das die staerksten Vorzuege der Immobilie auf einen Blick zeigt (z.B. die beeindruckendste Innen- oder Aussenperspektive) - nicht mehrere Fotos. " +
+    "Gibt es MEHRERE Abschnitte der Art \"grundriss\" (z.B. fuer verschiedene Geschosse wie Keller-, Erd-, Obergeschoss), ordne jedes Grundriss-Bild anhand der im Bild sichtbaren Beschriftung/Geschossbezeichnung (z.B. \"EG\", \"OG\", \"Keller\") dem Abschnitt zu, dessen Titel dazu passt. " +
     "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
@@ -1162,17 +1176,21 @@ async function writeSectionTextsChunk(
       const photoLine = `Fotos zeigen: ${
         photos.length > 0 ? photos.join("; ") : "keine zugeordneten Fotos"
       }`;
+      const isEckdaten = ECKDATEN_TITLE_RE.test(s.title);
       const dataLine =
-        ECKDATEN_TITLE_RE.test(s.title) && trimmedDatasheet
+        isEckdaten && trimmedDatasheet
           ? `\nObjektdaten aus hochgeladenen Datenblaettern (NUR fuer diesen Abschnitt verwenden):\n${trimmedDatasheet}`
           : "";
-      return `${i + 1}. "${s.title}" (${s.kind}): ${photoLine}${dataLine}`;
+      const formatLine = isEckdaten
+        ? "\nFormat fuer DIESEN Abschnitt: KEIN Fliesstext, sondern eine kompakte Liste der wichtigsten Eckdaten, GENAU EIN \"Label: Wert\" Fakt pro Zeile (z.B. \"Wohnfläche: ca. 142 m²\"), durch Zeilenumbrueche getrennt - nur Fakten, die tatsaechlich in den Objektdaten stehen."
+        : "";
+      return `${i + 1}. "${s.title}" (${s.kind}): ${photoLine}${dataLine}${formatLine}`;
     })
     .join("\n\n");
 
   const system =
     `Du bist ein erfahrener Immobilien-Texter fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(styleTexts, type)}\n\n` +
-    "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts. " +
+    "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts (ausser ein abweichendes Format ist explizit angegeben, siehe unten). " +
     "Objektdaten aus hochgeladenen Datenblaettern (Wohnflaeche, Zimmeranzahl, Baujahr, Kaufpreis usw.) sind, falls vorhanden, direkt beim jeweiligen Abschnitt unten aufgefuehrt - verwende sie AUSSCHLIESSLICH fuer genau diesen einen Abschnitt und NICHT fuer irgendeinen anderen Abschnitt.\n\n" +
     "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den fuer den jeweiligen Abschnitt angegebenen Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
     "Schreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren (also \"für\" statt \"fuer\", \"großzügig\" statt \"grosszuegig\"). " +

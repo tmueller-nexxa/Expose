@@ -9,12 +9,38 @@ export interface Rect {
   h: number;
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+// Wandelt eine Nicht-"data:"-Quelle (z.B. eine Firebase-Storage-URL im
+// Cloud-Modus) in eine echte data:-URL um. Ohne das wird ein daraus
+// gezeichnetes <canvas> als "cross-origin getaintet" markiert - jeder
+// spaetere getImageData()/toDataURL()-Aufruf wirft dann eine SecurityError,
+// selbst wenn der Server CORS erlauben wuerde (das <img>-Element muesste
+// zusaetzlich crossOrigin="anonymous" gesetzt bekommen, was bei per
+// getDownloadURL() erzeugten, oeffentlich lesbaren Storage-URLs nicht
+// zuverlaessig funktioniert). Ueber fetch() + FileReader umgangen - dasselbe
+// Muster wie splitDataUrl() in util.ts fuer denselben Bug bei der KI-Anbindung.
+async function ensureDataUrl(src: string): Promise<string> {
+  if (src.startsWith("data:")) return src;
+  try {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return src;
+  }
+}
+
+async function loadImage(src: string): Promise<HTMLImageElement> {
+  const normalized = await ensureDataUrl(src);
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Bild konnte nicht geladen werden."));
-    img.src = src;
+    img.src = normalized;
   });
 }
 

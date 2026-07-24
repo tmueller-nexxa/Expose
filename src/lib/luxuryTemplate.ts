@@ -131,10 +131,14 @@ function body(
     // hat, bevor die Schrift verkleinert wird - verhindert, dass ein langer
     // Absatz ueber den unteren Seitenrand hinauswaechst (analog zu heading()).
     maxH: number;
+    // Erlaubt, den Schrumpf-Boden fuer besonders lange/dichte Inhalte
+    // (z.B. die Eckdaten-Fakten-Liste) weiter abzusenken als der normale
+    // Fliesstext-Mindeststandard.
+    minFontSize: number;
   }> = {},
 ): PageElement {
   const maxFontSize = 13.5;
-  const minFontSize = 10.5;
+  const minFontSize = opts.minFontSize ?? 10.5;
   const budgetH = opts.maxH ?? h * 3;
   // Die Boxhoehe folgt ausschliesslich dem tatsaechlichen Textinhalt (nicht
   // einer geraten Mindesthoehe) - nur so kann die Hintergrundflaeche
@@ -255,6 +259,29 @@ function heroLogoBadge(logo: StoredFile | null): PageElement[] {
   return [logoEl];
 }
 
+// Grosser "Exposé"-Schriftzug oben links auf dem Titelfoto, in der
+// Schwungschrift - statischer Marken-/Rubrik-Schriftzug, kein KI-generierter
+// Inhalt, darum ohne den Auto-Schrumpf-Mechanismus von heading(). Fester
+// z-Wert oberhalb von IMAGE_Z (2), aus demselben Grund wie beim Logo-Badge.
+function exposeMark(): PageElement {
+  return {
+    id: uid("el"),
+    kind: "heading",
+    x: MARGIN,
+    y: 0.035,
+    w: 0.6,
+    h: 0.09,
+    z: 3,
+    text: "Exposé",
+    fontSize: Math.round(30 * SCRIPT_SCALE),
+    align: "left",
+    color: WHITE,
+    background: "rgba(0,0,0,0)",
+    fontWeight: 700,
+    fontFamily: SERIF,
+  };
+}
+
 function page(title: string, background: string, elements: PageElement[]): Page {
   return { id: uid("pg"), title, background, elements };
 }
@@ -304,15 +331,16 @@ function titlePage(
   const els: PageElement[] = [];
   if (photos[0]) els.push(image(0, 0, 1, heroH, photos[0]));
   else els.push({ id: uid("el"), kind: "shape", x: 0, y: 0, w: 1, h: heroH, z: 1, color: "#e7e2d8" });
+  els.push(exposeMark());
   els.push(...heroLogoBadge(logo));
 
   // Ueberschrift/Untertitel zuerst bauen (ohne zu pushen), um ihre
   // tatsaechliche Hoehe zu kennen, BEVOR Panel und Folgeelemente anhand
   // dieser Hoehe positioniert werden - verhindert Ueberlappung bei
   // mehrzeiligen Ueberschriften der Schwungschrift.
-  const headingEl = heading(headline || "Exposé", MARGIN, heroH + 0.1, CONTENT_W, 0.14, {
-    fontSize: Math.round(40 * SCRIPT_SCALE),
-    maxH: 0.2,
+  const headingEl = heading(headline || "Exposé", MARGIN, heroH + 0.1, CONTENT_W, 0.09, {
+    fontSize: Math.round(26 * SCRIPT_SCALE),
+    maxH: 0.13,
   });
   const subtitleTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const subtitleEl = subtitle
@@ -374,6 +402,10 @@ function stackedPage(title: string, text: string, photos: string[]): Page {
   return page(title, WHITE, els);
 }
 
+// Zeigt ALLE zugeordneten Grundriss-Bilder (nicht nur das erste) - ein
+// Grundriss-Abschnitt fasst typischerweise mehrere Geschosse zusammen
+// (Keller-, Erd-, Obergeschoss), die alle sichtbar sein muessen, nicht nur
+// eines davon.
 function grundrissPage(title: string, text: string, photos: string[]): Page {
   const els: PageElement[] = [];
 
@@ -384,7 +416,7 @@ function grundrissPage(title: string, text: string, photos: string[]): Page {
   const hasPhoto = Boolean(photos[0]);
   const photoTop = headingEl.y + headingEl.h + (hasPhoto ? 0.03 : TEXT_PANEL_GAP);
   const photoArea = hasPhoto ? 0.55 : 0;
-  if (hasPhoto) els.push(image(MARGIN, photoTop, CONTENT_W, photoArea, photos[0]));
+  if (hasPhoto) els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoArea));
   const textTop = photoTop + photoArea + (hasPhoto ? 0.03 : 0);
   const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop), { maxH: 0.94 - textTop });
 
@@ -432,6 +464,35 @@ function textOnlyPage(title: string, text: string): Page {
   els.push(textPanel(bodyEl, GREY));
   els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
   els.push(rule(MARGIN, 0.19, 0.1));
+  els.push(headingEl);
+  els.push(bodyEl);
+  return page(title, WHITE, els);
+}
+
+// Eigene Vorlage speziell fuer den "Eckdaten"-Abschnitt: reine Fakten-Liste
+// (Wohnflaeche, Zimmer, Baujahr, Kaufpreis usw.), darum bewusst OHNE
+// konkurrierende Fotoflaeche, mit der Ueberschrift weiter oben (mehr Platz
+// fuer den Text darunter) und einem deutlich groesszuegigeren Hoehenbudget
+// samt abgesenktem Schrumpf-Boden (siehe body()) - verhindert, dass die
+// potenziell laengere Fakten-Aufzaehlung ueber die Kartenflaeche hinauswaechst
+// oder unleserlich klein/gequetscht wirkt.
+function eckdatenPage(title: string, text: string): Page {
+  const els: PageElement[] = [];
+
+  const headingEl = heading(title, MARGIN, 0.13, CONTENT_W, 0.08, {
+    fontSize: Math.round(25 * SCRIPT_SCALE),
+    maxH: 0.12,
+  });
+  const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
+  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.94 - bodyTop), {
+    maxH: 0.94 - bodyTop,
+    minFontSize: 9,
+  });
+
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
+  els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
+  els.push(rule(MARGIN, 0.115, 0.1));
   els.push(headingEl);
   els.push(bodyEl);
   return page(title, WHITE, els);
@@ -497,6 +558,11 @@ function documentPage(title: string, img: string): Page {
 
 // --- Zusammenbau -------------------------------------------------------------
 
+// Erkennt den "Eckdaten"-Abschnitt am Titel (unabhaengig von der erkannten
+// Art) - dieselbe Erkennung wie fuer die Datenblatt-Text-Isolation in
+// ai.ts/writeSectionTextsChunk.
+const ECKDATEN_TITLE_RE = /eckdaten/i;
+
 export interface KiExposeSectionInput {
   section: ExposeSection;
   photos: string[]; // DataURLs, bereits zugeordnet
@@ -535,6 +601,13 @@ export function buildLuxuryPages(
 
   for (const { section, photos, headline, text } of inputs) {
     const title = headline || section.title;
+    // "Eckdaten" bekommt unabhaengig von der erkannten Art (meist "sonstiges"
+    // oder "objektbeschreibung") immer die dedizierte Fakten-Vorlage, nicht
+    // die generische Text-/Foto-Seite.
+    if (ECKDATEN_TITLE_RE.test(section.title) && section.kind !== "titel" && section.kind !== "kontakt") {
+      pages.push(eckdatenPage(title, text));
+      continue;
+    }
     switch (section.kind) {
       case "titel":
         pages.push(titlePage(title, text, photos, heroLogo, TYPE_LABEL[type]));
