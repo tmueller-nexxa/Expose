@@ -475,6 +475,26 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
   return page("Kontakt", CREAM, els);
 }
 
+// Fuer eingescannte/gerenderte Dokumentseiten (z.B. die erste, wichtigste
+// Seite eines Energieausweises) - der Seiteninhalt (Kennwerte, Diagramme)
+// steckt bereits fertig im Bild selbst, darum nur Titel + grossflaechiges
+// Bild, kein zusaetzlich generierter Fliesstext.
+function documentPage(title: string, img: string): Page {
+  const els: PageElement[] = [];
+
+  const headingEl = heading(title, MARGIN, 0.09, CONTENT_W, 0.07, {
+    fontSize: Math.round(25 * SCRIPT_SCALE),
+    maxH: 0.14,
+  });
+  const photoTop = headingEl.y + headingEl.h + 0.03;
+
+  els.push(textPanel(headingEl, CREAM));
+  els.push(rule(MARGIN, 0.075, 0.1));
+  els.push(headingEl);
+  els.push(image(MARGIN, photoTop, CONTENT_W, Math.max(0.3, 0.94 - photoTop), img));
+  return page(title, WHITE, els);
+}
+
 // --- Zusammenbau -------------------------------------------------------------
 
 export interface KiExposeSectionInput {
@@ -502,10 +522,16 @@ export function buildLuxuryPages(
   // weiterhin das normale (nicht invertierte) Logo, da sie keinen Fotohinter-
   // grund hat.
   heroLogo: StoredFile | null = logo,
+  // Erste/wichtigste Seite eines hochgeladenen Energieausweises (bereits als
+  // Bild gerendert, siehe KiExposePage.tsx) - wird als EIGENE, einzelne Seite
+  // eingefuegt (direkt vor Kontakt, sonst am Ende), NICHT als normales Foto
+  // in andere Abschnitte gemischt.
+  energieausweisImage: string | null = null,
 ): Page[] {
   z = 1;
   const pages: Page[] = [];
   let altSide = false;
+  let pendingEnergieausweis = energieausweisImage;
 
   for (const { section, photos, headline, text } of inputs) {
     const title = headline || section.title;
@@ -520,6 +546,10 @@ export function buildLuxuryPages(
         pages.push(galeriePage(title, photos));
         break;
       case "kontakt":
+        if (pendingEnergieausweis) {
+          pages.push(documentPage("Energieausweis", pendingEnergieausweis));
+          pendingEnergieausweis = null;
+        }
         pages.push(kontaktPage(logo, photos));
         break;
       default:
@@ -532,6 +562,12 @@ export function buildLuxuryPages(
           altSide = !altSide;
         }
     }
+  }
+
+  // Kein Kontakt-Abschnitt in der Struktur gefunden (Sonderfall) - Energie-
+  // ausweis trotzdem nicht verwerfen, ans Ende der Inhaltsseiten anhaengen.
+  if (pendingEnergieausweis) {
+    pages.push(documentPage("Energieausweis", pendingEnergieausweis));
   }
 
   // Uebrig gebliebene, keinem Abschnitt zugeordnete Fotos nicht verwerfen -

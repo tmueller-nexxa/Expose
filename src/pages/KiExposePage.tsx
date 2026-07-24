@@ -246,15 +246,32 @@ export function KiExposePage() {
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
       const pdfFiles = files.filter((f) => f.mime === "application/pdf");
+      // Energieausweis-PDFs (am Dateinamen erkannt) werden GESONDERT
+      // behandelt: nur die erste (wichtigste) Seite wird verwendet und als
+      // eigene, einzelne Seite ins Exposé eingefügt - nicht als normales
+      // Foto in den Foto-Pool anderer Abschnitte gemischt, und ihr Text
+      // (Energiekennwerte) fliesst NICHT in die allgemeine Texterstellung
+      // ein (siehe Punkt 4/writeExposeSectionTexts).
+      const ENERGIEAUSWEIS_RE = /energieausweis|energiepass|enev/i;
+      const energieausweisFiles = pdfFiles.filter((f) => ENERGIEAUSWEIS_RE.test(f.name));
+      const datasheetPdfFiles = pdfFiles.filter((f) => !ENERGIEAUSWEIS_RE.test(f.name));
+
+      let energieausweisImage: string | null = null;
+      for (const f of energieausweisFiles) {
+        if (energieausweisImage) continue; // nur die erste gefundene Datei verwenden
+        const rendered = await renderPdfPages(f.dataUrl, 1, 1400);
+        if (rendered[0]?.image) energieausweisImage = rendered[0].image;
+      }
+
       for (const f of imageFiles) await addPhoto(f.dataUrl);
-      for (const f of pdfFiles) {
+      for (const f of datasheetPdfFiles) {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
         for (const p of rendered) {
           if (p.image) await addPhoto(p.image);
           if (p.text) datasheetText += `\n\n[${f.name}]\n${p.text}`;
         }
       }
-      if (photoPool.length === 0 && !datasheetText.trim()) {
+      if (photoPool.length === 0 && !datasheetText.trim() && !energieausweisImage) {
         setResultMsg({ ok: false, msg: "Aus den hochgeladenen Dateien konnten weder Fotos noch Text gelesen werden." });
         return;
       }
@@ -329,7 +346,7 @@ export function KiExposePage() {
       const heroLogo = data.logo
         ? { ...data.logo, mime: "image/png", dataUrl: await invertLogoToWhite(data.logo.dataUrl) }
         : null;
-      const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo);
+      const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo, energieausweisImage);
 
       const project: ExposeProject = {
         id: uid("proj"),

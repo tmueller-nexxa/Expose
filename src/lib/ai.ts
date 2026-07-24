@@ -1140,6 +1140,13 @@ const SECTION_TEXT_TOOL = {
 // Anfrage. Blockweise Verarbeitung verhindert, dass bei vielen Abschnitten
 // (z.B. 15-20 bei einem umfangreichen Beispiel) das Ausgabe-Limit (max_tokens)
 // gesprengt wird und dadurch GAR KEIN Text mehr zurueckkommt.
+// Die "Eckdaten"-Seite (Wohnflaeche, Zimmeranzahl, Baujahr, Kaufpreis usw.)
+// ist der einzige Abschnitt, der die Objektdaten aus hochgeladenen
+// Datenblaettern bekommt - andere Abschnitte (Lage, Ausstattung, ...) sollen
+// NICHT von diesem Datenblatt-Text beeinflusst werden, nur von den ihnen
+// zugeordneten Fotos.
+const ECKDATEN_TITLE_RE = /eckdaten/i;
+
 async function writeSectionTextsChunk(
   api: ApiSettings,
   type: ExposeType,
@@ -1148,20 +1155,26 @@ async function writeSectionTextsChunk(
   datasheetText: string,
   styleTexts: StyleText[],
 ): Promise<SectionText[] | AiError> {
+  const trimmedDatasheet = datasheetText.trim().slice(0, 6000);
   const sectionsDesc = chunk
     .map((s, i) => {
       const photos = chunkPhotoDescriptions[i]?.filter(Boolean) ?? [];
-      return `${i + 1}. "${s.title}" (${s.kind}): Fotos zeigen: ${
+      const photoLine = `Fotos zeigen: ${
         photos.length > 0 ? photos.join("; ") : "keine zugeordneten Fotos"
       }`;
+      const dataLine =
+        ECKDATEN_TITLE_RE.test(s.title) && trimmedDatasheet
+          ? `\nObjektdaten aus hochgeladenen Datenblaettern (NUR fuer diesen Abschnitt verwenden):\n${trimmedDatasheet}`
+          : "";
+      return `${i + 1}. "${s.title}" (${s.kind}): ${photoLine}${dataLine}`;
     })
-    .join("\n");
+    .join("\n\n");
 
   const system =
     `Du bist ein erfahrener Immobilien-Texter fuer ein ${TYPE_LABEL[type]}. ${buildStyleContext(styleTexts, type)}\n\n` +
-    "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts und (falls vorhanden) den folgenden Objektdaten aus hochgeladenen Datenblaettern:\n\n" +
-    `${datasheetText.trim().slice(0, 6000) || "(keine Datenblaetter hochgeladen)"}\n\n` +
-    "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
+    "Schreibe fuer jeden vorgegebenen Abschnitt eine Ueberschrift und einen Marketingtext, basierend auf den beschriebenen Fotos dieses Abschnitts. " +
+    "Objektdaten aus hochgeladenen Datenblaettern (Wohnflaeche, Zimmeranzahl, Baujahr, Kaufpreis usw.) sind, falls vorhanden, direkt beim jeweiligen Abschnitt unten aufgefuehrt - verwende sie AUSSCHLIESSLICH fuer genau diesen einen Abschnitt und NICHT fuer irgendeinen anderen Abschnitt.\n\n" +
+    "Erfinde KEINE konkreten Zahlen (Preis, Quadratmeter, Zimmeranzahl, Baujahr usw.), die nicht in den fuer den jeweiligen Abschnitt angegebenen Objektdaten oder Fotobeschreibungen stehen - schreibe in diesem Fall allgemeiner. " +
     "Schreibe in korrektem Deutsch mit echten Umlauten und Eszett (ä, ö, ü, Ä, Ö, Ü, ß) - NIEMALS als ae/oe/ue/ss transliterieren (also \"für\" statt \"fuer\", \"großzügig\" statt \"grosszuegig\"). " +
     "Antworte ausschliesslich ueber das Werkzeug \"expose_section_texts\" mit GENAU einem Eintrag pro Abschnitt, in der vorgegebenen Reihenfolge.";
 
