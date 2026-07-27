@@ -40,6 +40,13 @@ const SCRIPT_SCALE = 1.6;
 
 const MARGIN = 0.09;
 const CONTENT_W = 1 - MARGIN * 2;
+// Untere Grenze fuer TEXT-Flaechen (Ueberschrift/Fliesstext-Panels) - liegt
+// bewusst OBERHALB der Seitenzahl (siehe pageNumberMark(), Box beginnt bei
+// 1-MARGIN-0.04 = 0.87), damit deren Hintergrundbox nie ein Textpanel
+// ueberlappt. Fotoflaechen sind davon ausgenommen (siehe photoLayout()-
+// Aufrufe) - ein Foto darf bis in die Ecke reichen, die Seitenzahl liegt
+// dank hohem z-Wert dann einfach sichtbar darueber.
+const CONTENT_BOTTOM = 0.85;
 
 let z = 1;
 
@@ -226,6 +233,49 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
   };
 }
 
+// Seitenzahl unten rechts, mit Abstand vom Rand (MARGIN), in der Schwung-
+// schrift, goldene Schriftfarbe auf einer eigenen Hintergrundbox - wird auf
+// JEDE erzeugte Seite gelegt (siehe Ende von buildLuxuryPages()). Nutzt
+// bewusst einen fest hohen z-Wert (nicht den laufenden Zaehler) statt der
+// normalen panel()/textPanel()-Helfer (die auf z:0 liegen) - so bleibt die
+// Seitenzahl auf JEDER Seite sichtbar obenauf, auch auf Seiten mit einem
+// grossflaechigen Foto, das sonst bis in die untere rechte Ecke reicht.
+const PAGE_NUM_Z = 900;
+function pageNumberMark(n: number): PageElement[] {
+  const w = 0.09;
+  const h = 0.04;
+  const x = 1 - MARGIN - w;
+  const y = 1 - MARGIN - h;
+  const textEl: PageElement = {
+    id: uid("el"),
+    kind: "text",
+    x,
+    y,
+    w,
+    h,
+    z: PAGE_NUM_Z + 1,
+    text: String(n),
+    fontSize: 20,
+    align: "center",
+    color: GOLD,
+    background: "rgba(0,0,0,0)",
+    fontWeight: 700,
+    fontFamily: SERIF,
+  };
+  const boxEl: PageElement = {
+    id: uid("el"),
+    kind: "shape",
+    x: textEl.x - TEXT_PAD_X,
+    y: textEl.y - TEXT_PAD_Y,
+    w: textEl.w + TEXT_PAD_X * 2,
+    h: textEl.h + TEXT_PAD_Y * 2,
+    z: PAGE_NUM_Z,
+    color: WHITE,
+    radius: 8,
+  };
+  return [boxEl, textEl];
+}
+
 function image(x: number, y: number, w: number, h: number, src: string): PageElement {
   return {
     id: uid("el"),
@@ -247,8 +297,10 @@ function image(x: number, y: number, w: number, h: number, src: string): PageEle
 // machen) - das Logo liegt direkt auf dem Foto.
 function heroLogoBadge(logo: StoredFile | null): PageElement[] {
   if (!logo) return [];
-  const w = 0.16;
-  const h = 0.045;
+  // 200% Groesse (doppelte Breite/Hoehe ggue. dem urspruenglichen Badge) -
+  // vorher war das Logo auf dem Titelfoto kaum lesbar.
+  const w = 0.32;
+  const h = 0.09;
   const x = 1 - MARGIN - w;
   const y = 0.035;
   // Fester z-Wert oberhalb von IMAGE_Z (2, siehe image()) statt des
@@ -272,10 +324,10 @@ function exposeMark(): PageElement {
     x: MARGIN,
     y: 0.035,
     w: 0.6,
-    h: 0.09,
+    h: 0.16,
     z: 4,
     text: "Exposé",
-    fontSize: Math.round(30 * SCRIPT_SCALE),
+    fontSize: 106,
     align: "left",
     color: WHITE,
     background: "rgba(0,0,0,0)",
@@ -295,32 +347,46 @@ function page(title: string, background: string, elements: PageElement[]): Page 
 // --- Foto-Layouts -----------------------------------------------------------
 // Ordnet 1-4 Fotos innerhalb einer Flaeche als Bildelemente an.
 
-function photoLayout(photos: string[], x: number, y: number, w: number, h: number): PageElement[] {
+// Ohne zugeordnete Fotos (KI hat keinen Treffer gefunden/keine Fotos
+// uebrig) wird die Fotoflaeche NICHT einfach weggelassen, sondern zeigt
+// mindestens einen leeren Bild-Platzhalter (image() mit src:"") - der
+// Nutzer sieht so klar, wo noch ein Foto fehlt, und kann eines per
+// Drag&Drop nachtraeglich einfuegen, statt vor einer scheinbar
+// vollstaendigen, aber leeren Seite zu stehen.
+function photoLayout(
+  photos: string[],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  minCount = 1,
+): PageElement[] {
   const gap = 0.014;
-  const n = Math.min(photos.length, 4);
+  const list = photos.length > 0 ? photos : Array.from({ length: Math.max(1, minCount) }, () => "");
+  const n = Math.min(list.length, 4);
   if (n === 0) return [];
-  if (n === 1) return [image(x, y, w, h, photos[0])];
+  if (n === 1) return [image(x, y, w, h, list[0])];
   if (n === 2) {
     const hh = (h - gap) / 2;
-    return [image(x, y, w, hh, photos[0]), image(x, y + hh + gap, w, hh, photos[1])];
+    return [image(x, y, w, hh, list[0]), image(x, y + hh + gap, w, hh, list[1])];
   }
   if (n === 3) {
     const bigH = h * 0.6;
     const smallW = (w - gap) / 2;
     const smallH = h - bigH - gap;
     return [
-      image(x, y, w, bigH, photos[0]),
-      image(x, y + bigH + gap, smallW, smallH, photos[1]),
-      image(x + smallW + gap, y + bigH + gap, smallW, smallH, photos[2]),
+      image(x, y, w, bigH, list[0]),
+      image(x, y + bigH + gap, smallW, smallH, list[1]),
+      image(x + smallW + gap, y + bigH + gap, smallW, smallH, list[2]),
     ];
   }
   const hw = (w - gap) / 2;
   const hh = (h - gap) / 2;
   return [
-    image(x, y, hw, hh, photos[0]),
-    image(x + hw + gap, y, hw, hh, photos[1]),
-    image(x, y + hh + gap, hw, hh, photos[2]),
-    image(x + hw + gap, y + hh + gap, hw, hh, photos[3]),
+    image(x, y, hw, hh, list[0]),
+    image(x + hw + gap, y, hw, hh, list[1]),
+    image(x, y + hh + gap, hw, hh, list[2]),
+    image(x + hw + gap, y + hh + gap, hw, hh, list[3]),
   ];
 }
 
@@ -335,8 +401,10 @@ function titlePage(
 ): Page {
   const heroH = 0.6;
   const els: PageElement[] = [];
-  if (photos[0]) els.push(image(0, 0, 1, heroH, photos[0]));
-  else els.push({ id: uid("el"), kind: "shape", x: 0, y: 0, w: 1, h: heroH, z: 1, color: "#e7e2d8" });
+  // Leeres Bild-Element statt einer blossen Farbflaeche, wenn kein Titelfoto
+  // zugeordnet wurde - eine Farbflaeche ist kein Drop-Ziel, ein leeres
+  // image()-Element schon (siehe photoLayout()-Kommentar oben).
+  els.push(image(0, 0, 1, heroH, photos[0] ?? ""));
   els.push(exposeMark());
   els.push(...heroLogoBadge(logo));
 
@@ -350,7 +418,7 @@ function titlePage(
   });
   const subtitleTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const subtitleEl = subtitle
-    ? body(subtitle, MARGIN, subtitleTop, CONTENT_W, 0.06, { maxH: 0.94 - subtitleTop })
+    ? body(subtitle, MARGIN, subtitleTop, CONTENT_W, 0.06, { maxH: CONTENT_BOTTOM - subtitleTop })
     : null;
 
   els.push(textPanel(headingEl, WHITE));
@@ -374,7 +442,9 @@ function twoColPage(title: string, text: string, photos: string[], photoLeft: bo
     maxH: 0.16,
   });
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
-  const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, 0.92 - bodyTop), { maxH: 0.94 - bodyTop });
+  const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, CONTENT_BOTTOM - 0.02 - bodyTop), {
+    maxH: CONTENT_BOTTOM - bodyTop,
+  });
 
   els.push(textPanel(headingEl, CREAM));
   els.push(textPanel(bodyEl, GREY));
@@ -419,12 +489,16 @@ function grundrissPage(title: string, text: string, photos: string[]): Page {
     fontSize: Math.round(25 * SCRIPT_SCALE),
     maxH: 0.14,
   });
-  const hasPhoto = Boolean(photos[0]);
-  const photoTop = headingEl.y + headingEl.h + (hasPhoto ? 0.03 : TEXT_PANEL_GAP);
-  const photoArea = hasPhoto ? 0.55 : 0;
-  if (hasPhoto) els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoArea));
-  const textTop = photoTop + photoArea + (hasPhoto ? 0.03 : 0);
-  const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, 0.94 - textTop), { maxH: 0.94 - textTop });
+  // Fotoflaeche wird IMMER reserviert (auch ohne zugeordnetes Foto) - zeigt
+  // dann einen leeren Platzhalter statt die Seite ohne jeden Hinweis auf den
+  // fehlenden Grundriss durchlaufen zu lassen (siehe photoLayout()).
+  const photoTop = headingEl.y + headingEl.h + 0.03;
+  const photoArea = 0.55;
+  els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoArea));
+  const textTop = photoTop + photoArea + 0.03;
+  const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, CONTENT_BOTTOM - textTop), {
+    maxH: CONTENT_BOTTOM - textTop,
+  });
 
   els.push(textPanel(headingEl, CREAM));
   els.push(textPanel(bodyEl, GREY));
@@ -452,29 +526,6 @@ function galeriePage(title: string, photos: string[]): Page {
   return page(title, WHITE, els);
 }
 
-// Fuer Abschnitte ohne zugeordnete Fotos: reiner Textblock auf Karte statt
-// eine grosse, leere Fotoflaeche zu reservieren.
-function textOnlyPage(title: string, text: string): Page {
-  const els: PageElement[] = [];
-
-  const headingEl = heading(title, MARGIN, 0.22, CONTENT_W, 0.09, {
-    fontSize: Math.round(28 * SCRIPT_SCALE),
-    maxH: 0.16,
-  });
-  const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
-  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.7 - bodyTop), {
-    maxH: 0.94 - bodyTop,
-  });
-
-  els.push(textPanel(headingEl, CREAM));
-  els.push(textPanel(bodyEl, GREY));
-  els.push(eyebrow("Exposé", MARGIN, 0.09, CONTENT_W));
-  els.push(rule(MARGIN, 0.19, 0.1));
-  els.push(headingEl);
-  els.push(bodyEl);
-  return page(title, WHITE, els);
-}
-
 // Eigene Vorlage speziell fuer den "Eckdaten"-Abschnitt: reine Fakten-Liste
 // (Wohnflaeche, Zimmer, Baujahr, Kaufpreis usw.), darum bewusst OHNE
 // konkurrierende Fotoflaeche, mit der Ueberschrift weiter oben (mehr Platz
@@ -490,8 +541,8 @@ function eckdatenPage(title: string, text: string): Page {
     maxH: 0.12,
   });
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
-  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, 0.94 - bodyTop), {
-    maxH: 0.94 - bodyTop,
+  const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, CONTENT_BOTTOM - bodyTop), {
+    maxH: CONTENT_BOTTOM - bodyTop,
     minFontSize: 9,
   });
 
@@ -632,9 +683,13 @@ export function buildLuxuryPages(
           built = kontaktPage(logo, photos);
           break;
         default:
-          if (photos.length === 0) {
-            built = textOnlyPage(title, text);
-          } else if (photos.length >= 3) {
+          // Auch OHNE zugeordnetes Foto (photos.length === 0) wird die
+          // zweispaltige Vorlage genutzt statt eines reinen Textblocks -
+          // twoColPage() reserviert die Fotoflaeche ueber photoLayout()
+          // trotzdem und zeigt dann einen leeren Platzhalter (siehe dort),
+          // damit fehlende Fotos immer sichtbar/nachtraeglich befuellbar
+          // bleiben statt kommentarlos zu verschwinden.
+          if (photos.length >= 3) {
             built = stackedPage(title, text, photos);
           } else {
             built = twoColPage(title, text, photos, altSide);
@@ -661,6 +716,9 @@ export function buildLuxuryPages(
     const chunk = overflowPhotos.slice(i, i + 4);
     pages.push(galeriePage(i === 0 ? "Weitere Impressionen" : "Impressionen", chunk));
   }
+
+  // Seitenzahl unten rechts auf JEDER erzeugten Seite (siehe pageNumberMark()).
+  pages.forEach((p, i) => p.elements.push(...pageNumberMark(i + 1)));
 
   return pages;
 }
