@@ -489,7 +489,9 @@
   .print-page:last-child {
     page-break-after: auto;
   }
-  .el-image.empty {
-    display: none !important;
-  }
+  /* Leere Bild-Platzhalter (fehlendes Foto) bleiben AUCH im Export/Druck
+     sichtbar (dieselbe gestrichelte Box + "Bild hierher ziehen"-Hinweis wie
+     im Editor) statt lautlos zu verschwinden - eine leere, unauffaellige
+     Luecke im PDF wuerde ein fehlendes Foto vor dem Versand an einen Kunden
+     leicht uebersehen lassen, der deutliche Platzhalter-Hinweis nicht. */
 }
