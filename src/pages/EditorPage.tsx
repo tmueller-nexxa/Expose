@@ -860,6 +860,22 @@ export function EditorPage() {
               onStartEdit={(id) => {
                 setSelectedId(id);
                 setEditingId(id);
+                // Beim Start von "Bild anpassen" sofort einen minimalen Zoom
+                // setzen, falls das Bild noch auf 1 (unveraendert) steht -
+                // bei imgScale genau 1 ist der Bewegungsspielraum (siehe
+                // onImagePanDown in CanvasElement.tsx) rechnerisch 0, das
+                // Foto liess sich also trotz "Ziehen zum Verschieben"-Hinweis
+                // gar nicht bewegen, bevor man vorher manuell reingezoomt
+                // hat. Mit einem kleinen Basis-Zoom funktioniert Ziehen
+                // sofort, ohne dass sich am unveraenderten (nicht editierten)
+                // Bild optisch etwas aendert.
+                const cur = projectRef.current;
+                const el = cur?.pages
+                  .flatMap((p) => p.elements)
+                  .find((e) => e.id === id);
+                if (el?.kind === "image" && (el as ImageElement).src && (el.imgScale ?? 1) <= 1) {
+                  patchElement(id, { imgScale: 1.15 } as Partial<ImageElement>);
+                }
               }}
               onCommitText={(id, text) => {
                 patchTextGrow(id, { text });
