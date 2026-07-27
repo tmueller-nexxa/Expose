@@ -21,7 +21,7 @@ import { generateImageText, generatePageText } from "../lib/ai";
 import { EXPOSE_FONTS, EXPOSE_LIGHT_GREY, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
-import { fitFontSize, fitTextBoxHeight } from "../editor/fit";
+import { fitFontSize, fitTextBoxHeight, fitTextBoxWidth } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import { PageCanvas } from "../editor/PageCanvas";
 import { startPointerDrag } from "../editor/pointer";
@@ -190,9 +190,15 @@ export function EditorPage() {
     [mutatePages],
   );
 
-  // Wie patchElement, aber fuer Textfelder: waechst die Box automatisch
-  // nach unten, falls Text/Schriftgroesse sonst nicht mehr vollstaendig
-  // hineinpassen wuerden - damit nirgends Schrift abgeschnitten wird.
+  // Wie patchElement, aber fuer Textfelder: bei laengerem Text (oder
+  // groesserer Schrift) waechst zuerst die BREITE (bis zum Seitenrand),
+  // NICHT die Hoehe - ein Textfeld soll bei mehr Inhalt primaer breiter
+  // werden statt unnoetig mehrzeilig umzubrechen und dadurch immer hoeher
+  // zu werden. Die Hoehe wird danach IMMER exakt auf das noetige Mass fuer
+  // die (ggf. neue) Breite gesetzt - wächst wie schrumpft, damit die Box nie
+  // groesser als noetig ist (kein abgeschnittener Text, aber auch keine
+  // ueberschuessige Leerflaeche). Die Schriftgroesse selbst wird hier nie
+  // veraendert.
   const patchTextGrow = useCallback(
     (elId: string, patch: Partial<TextElement>) => {
       const cur = projectRef.current;
@@ -205,10 +211,23 @@ export function EditorPage() {
       }
       const merged = { ...el, ...patch };
       if (merged.text.trim()) {
-        const needed = fitTextBoxHeight(merged.text, merged.w, merged.fontSize, merged.fontWeight, merged.fontFamily);
-        if (needed > merged.h) {
-          patch = { ...patch, h: Math.min(needed, 1 - merged.y) };
+        // Breite darf nicht in ein anderes Element hineinwachsen, das
+        // rechts daneben liegt und sich vertikal mit dieser Box ueberlappt
+        // (z.B. ein Foto neben einer zweispaltigen Textspalte) - sonst
+        // wuerde laengerer Text die Nachbarflaeche verdecken.
+        const GAP = 0.02;
+        let maxW = 1 - merged.x;
+        for (const n of cur?.pages[pageIndex]?.elements ?? []) {
+          if (n.id === elId) continue;
+          const overlapsVertically = n.y < merged.y + merged.h && n.y + n.h > merged.y;
+          const isToRight = n.x >= merged.x + merged.w - 0.001;
+          if (overlapsVertically && isToRight) maxW = Math.min(maxW, n.x - merged.x - GAP);
         }
+        maxW = Math.max(merged.w, maxW);
+        const neededW = fitTextBoxWidth(merged.text, merged.fontSize, maxW, merged.fontWeight, merged.fontFamily);
+        const newW = Math.max(merged.w, neededW);
+        const neededH = fitTextBoxHeight(merged.text, newW, merged.fontSize, merged.fontWeight, merged.fontFamily);
+        patch = { ...patch, w: newW, h: Math.min(neededH, 1 - merged.y) };
       }
       patchElement(elId, patch);
     },

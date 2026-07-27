@@ -74,6 +74,35 @@ export function fitFontSize(
   return min;
 }
 
+// Ermittelt die noetige Boxbreite (Seitenanteil 0..1), damit ein Textfeld
+// den Text bei gegebener Schriftgroesse OHNE Zeilenumbruch zeigt (nur an
+// manuellen Zeilenumbruechen "\n" getrennt) - bis zu einer maximalen Breite
+// (z.B. der verfuegbare Platz bis zum Seitenrand). Wird diese ueberschritten,
+// bleibt die Breite bei maxWFrac stehen; der Text bricht dann dort um (die
+// noetige Hoehe dafuer liefert fitTextBoxHeight()). Genutzt, damit ein
+// Textfeld bei laengerem Text zuerst BREITER statt hoeher wird.
+export function fitTextBoxWidth(
+  text: string,
+  fontSize: number,
+  maxWFrac: number,
+  weight = 400,
+  fontFamily?: string,
+): number {
+  const isScript = (fontFamily ?? "").toLowerCase().includes("tangerine");
+  const padV = Math.max(3, fontSize * (isScript ? 0.45 : 0.35));
+  const padH = padV * 1.2;
+  const c = measureCtx();
+  c.font = `${weight} ${fontSize}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
+  let maxLineW = 0;
+  for (const paragraph of text.split("\n")) {
+    const w = c.measureText(paragraph).width;
+    if (w > maxLineW) maxLineW = w;
+  }
+  const neededPx = maxLineW + padH * 2;
+  const maxPx = Math.max(10, maxWFrac * REF_W);
+  return Math.min(neededPx, maxPx) / REF_W;
+}
+
 // Ermittelt die noetige Boxhoehe (Seitenanteil 0..1), damit ein Textfeld bei
 // gegebener Breite/Schriftgroesse den Text VOLLSTAENDIG zeigt (kein
 // abgeschnittener Text durch overflow:hidden). Polsterung/Zeilenhoehe
