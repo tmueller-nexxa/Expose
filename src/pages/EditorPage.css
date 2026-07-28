@@ -479,6 +479,17 @@
   .gen-toast {
     display: none !important;
   }
+  /* .editor-shell ist fuer die Bildschirm-Ansicht auf die Viewport-Hoehe
+     begrenzt (height:100vh; overflow:hidden) - ohne das hier aufzuheben,
+     wird der weit ueber 100vh hinausragende mehrseitige Druckinhalt
+     abgeschnitten und nur die erste (Bildschirm-hohe) Seite tatsaechlich
+     gedruckt/exportiert, egal wie viele .print-page-Elemente vorhanden sind. */
+  html,
+  body,
+  .editor-shell {
+    height: auto;
+    overflow: visible;
+  }
   .print-root {
     display: block;
   }
