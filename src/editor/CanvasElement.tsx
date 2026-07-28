@@ -7,9 +7,23 @@ import type {
   TextElement,
 } from "../lib/types";
 import { clamp } from "../lib/util";
-import { fitTextBoxHeight } from "./fit";
 import { startPointerDrag } from "./pointer";
 import { IconImage } from "../components/Icons";
+import { REF_H, REF_W } from "./constants";
+
+// Unsichtbares Ausrichtungsraster: Verschieben/Skalieren rastet auf ein
+// 8px-Raster (bezogen auf die Referenzseitengroesse REF_W/REF_H) ein - ohne
+// sichtbare Rasterlinien, aber so laesst sich z.B. dieselbe Position/Breite
+// bei zwei verschiedenen Elementen leicht wieder treffen.
+const GRID_PX = 8;
+function snapX(fracX: number): number {
+  const step = GRID_PX / REF_W;
+  return Math.round(fracX / step) * step;
+}
+function snapY(fracY: number): number {
+  const step = GRID_PX / REF_H;
+  return Math.round(fracY / step) * step;
+}
 
 interface Props {
   el: PageElement;
@@ -94,8 +108,8 @@ export function CanvasElement(props: Props) {
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
     startPointerDrag(e, (dx, dy) => {
       onChange(el.id, {
-        x: clamp(s.x + dx / pageW, 0, 1 - s.w),
-        y: clamp(s.y + dy / pageH, 0, 1 - s.h),
+        x: snapX(clamp(s.x + dx / pageW, 0, 1 - s.w)),
+        y: snapY(clamp(s.y + dy / pageH, 0, 1 - s.h)),
       });
     });
   }
@@ -151,24 +165,18 @@ export function CanvasElement(props: Props) {
         y = ny;
         h = s.h - (ny - s.y);
       }
-      // Textfelder duerfen nie kleiner werden, als der Text bei der
-      // (ggf. gerade geaenderten) Breite/Schriftgroesse braucht - sonst
-      // waere Schrift durch overflow:hidden abgeschnitten.
-      if ((el.kind === "text" || el.kind === "heading") && (el as TextElement).text.trim()) {
-        const t = el as TextElement;
-        const minH = fitTextBoxHeight(t.text, w, t.fontSize, t.fontWeight, t.fontFamily);
-        if (h < minH) {
-          if (corner.includes("n")) {
-            // Nur die Oberkante bewegt sich - Unterkante fix halten.
-            const bottom = s.y + s.h;
-            h = minH;
-            y = bottom - h;
-          } else {
-            h = minH;
-          }
-        }
-      }
-      onChange(el.id, { x, y, w, h });
+      // Textfelder sind per Eckgriff frei auf jede Groesse zuschneidbar -
+      // auch kleiner als der Text bei der aktuellen Schriftgroesse
+      // braucht. Ist die Box kleiner als der Inhalt, wird der Text dann
+      // sichtbar geclippt (siehe .el-text .txt { overflow: hidden;
+      // min-height: 0 } in EditorPage.css), statt die Box automatisch
+      // wieder zu vergroessern.
+      onChange(el.id, {
+        x: snapX(x),
+        y: snapY(y),
+        w: snapX(w),
+        h: snapY(h),
+      });
     });
   }
 

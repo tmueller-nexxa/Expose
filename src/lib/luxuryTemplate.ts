@@ -241,9 +241,10 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
 // Seitenzahl auf JEDER Seite sichtbar obenauf, auch auf Seiten mit einem
 // grossflaechigen Foto, das sonst bis in die untere rechte Ecke reicht.
 const PAGE_NUM_Z = 900;
+const PAGE_NUM_FONT_SIZE = 46;
 function pageNumberMark(n: number): PageElement[] {
-  const w = 0.09;
-  const h = 0.04;
+  const w = 0.13;
+  const h = 0.085;
   const x = 1 - MARGIN - w;
   const y = 1 - MARGIN - h;
   const textEl: PageElement = {
@@ -255,7 +256,7 @@ function pageNumberMark(n: number): PageElement[] {
     h,
     z: PAGE_NUM_Z + 1,
     text: String(n),
-    fontSize: 20,
+    fontSize: PAGE_NUM_FONT_SIZE,
     align: "center",
     color: GOLD,
     background: "rgba(0,0,0,0)",

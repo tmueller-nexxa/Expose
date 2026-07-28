@@ -216,6 +216,12 @@
   white-space: pre-wrap;
   overflow-wrap: break-word;
   overflow: hidden;
+  /* Ohne min-height:0 ignoriert ein Flex-Kind sein eigenes overflow:hidden,
+     sobald der Inhalt hoeher als die (fixe) Elternbox ist (CSS-Flexbox-
+     Standardverhalten min-height:auto) - das Textfeld liesse sich dann
+     zwar auf dem Papier verkleinern, der Text wuerde aber trotzdem ueber
+     den Rand hinaus sichtbar bleiben statt sauber zugeschnitten zu werden. */
+  min-height: 0;
 }
 .el-text.empty {
   border: 2px dashed #cbd5e1;
@@ -473,6 +479,17 @@
   }
   body {
     background: #fff;
+  }
+  /* Browser drucken/exportieren Hintergrundfarben und -bilder standardmaessig
+     NICHT, ausser der Nutzer aktiviert "Hintergrundgrafiken" im Druckdialog
+     manuell - ohne diese Regel kommen alle Foto-Hintergruende, Farbflaechen
+     (Formen) und Textkarten-Boxen im Export weiss/leer statt farbig heraus,
+     obwohl sie im Editor korrekt angezeigt werden. print-color-adjust:exact
+     erzwingt das exakte Drucken aller Hintergrundfarben/-bilder unabhaengig
+     von dieser Einstellung. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .editor-shell > *:not(.print-root),
   .topbar,
