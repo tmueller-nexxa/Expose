@@ -361,32 +361,35 @@
   color: var(--brand);
 }
 
-/* Inspector (floating) */
+/* Inspector (floating) - vertikal, mittig am linken Rand, damit die Leiste
+   nie ueber mittig/rechts platzierten Seiteninhalt reicht. */
 .inspector {
-  position: absolute;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
+  top: 50%;
+  left: 18px;
+  transform: translateY(-50%);
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-lg);
-  padding: 10px 12px;
+  padding: 12px 10px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
   z-index: 40;
-  flex-wrap: wrap;
-  max-width: 92%;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
 }
 .inspector .grp {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .inspector .sep {
-  width: 1px;
-  height: 24px;
+  width: 100%;
+  height: 1px;
   background: var(--border);
 }
 .inspector button.tool {
