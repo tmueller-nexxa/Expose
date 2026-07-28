@@ -20,6 +20,7 @@ import { loadProject, saveProject, saveProjectNow } from "../lib/storage";
 import { generateImageText, generatePageText } from "../lib/ai";
 import { EXPOSE_FONTS, EXPOSE_LIGHT_GREY, EXPOSE_TEXT_COLORS } from "../lib/designTokens";
 import { eraseRegionsFromImage } from "../lib/imageEdit";
+import { pdfFirstPageToImage } from "../lib/pdf";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
 import { fitFontSize, fitTextBoxHeight, fitTextBoxWidth } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
@@ -330,12 +331,31 @@ export function EditorPage() {
   );
 
   // --- Drop-Handler ------------------------------------------------------
-  async function dropFileToElement(elId: string, file: File) {
-    if (!file.type.startsWith("image/")) {
-      flash("Bitte eine Bilddatei ablegen.", true);
-      return;
+  // Bildflaechen akzeptieren neben Bildern auch PDFs - haeufig liegen
+  // Grundrisse/Energieausweise/Dokumente als PDF vor. Von einer abgelegten
+  // PDF-Datei wird die erste Seite als Bild gerendert (dieselbe Technik wie
+  // beim Einlesen von Beispiel-Exposés, siehe lib/pdf.ts).
+  async function resolveDroppedImageSrc(file: File): Promise<string | null> {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      const pdfDataUrl = await fileToDataUrl(file);
+      const img = await pdfFirstPageToImage(pdfDataUrl);
+      if (!img) {
+        flash("PDF konnte nicht gelesen werden.", true);
+        return null;
+      }
+      return img;
     }
-    const src = await fileToDataUrl(file);
+    if (file.type.startsWith("image/")) {
+      return fileToDataUrl(file);
+    }
+    flash("Bitte eine Bild- oder PDF-Datei ablegen.", true);
+    return null;
+  }
+
+  async function dropFileToElement(elId: string, file: File) {
+    const src = await resolveDroppedImageSrc(file);
+    if (!src) return;
     // Zoom/Position auf das neue Foto zuruecksetzen - eine fuer das alte
     // Foto passende Verschiebung/Zoomstufe passt nicht zum neuen Bild. z
     // immer auf die hinterste Ebene setzen, damit das Foto nie Formen/Text
@@ -352,11 +372,8 @@ export function EditorPage() {
   }
 
   async function dropFileToCanvas(xFrac: number, yFrac: number, file: File) {
-    if (!file.type.startsWith("image/")) {
-      flash("Bitte eine Bilddatei ablegen.", true);
-      return;
-    }
-    const src = await fileToDataUrl(file);
+    const src = await resolveDroppedImageSrc(file);
+    if (!src) return;
     const w = 0.34;
     const h = 0.26;
     // Fotos liegen immer auf der hintersten Ebene (siehe dropFileToElement).
