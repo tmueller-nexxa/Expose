@@ -195,11 +195,10 @@ export function EditorPage() {
   // groesserer Schrift) waechst zuerst die BREITE (bis zum Seitenrand),
   // NICHT die Hoehe - ein Textfeld soll bei mehr Inhalt primaer breiter
   // werden statt unnoetig mehrzeilig umzubrechen und dadurch immer hoeher
-  // zu werden. Die Hoehe wird danach IMMER exakt auf das noetige Mass fuer
-  // die (ggf. neue) Breite gesetzt - wächst wie schrumpft, damit die Box nie
-  // groesser als noetig ist (kein abgeschnittener Text, aber auch keine
-  // ueberschuessige Leerflaeche). Die Schriftgroesse selbst wird hier nie
-  // veraendert.
+  // zu werden. Breite UND Hoehe wachsen dabei nur, falls der Text sonst
+  // abgeschnitten wuerde - eine vom Nutzer manuell (per Eckgriff) gesetzte
+  // Groesse, auch kleiner als der Textbedarf, wird nie eigenmaechtig wieder
+  // veraendert. Die Schriftgroesse selbst wird hier nie veraendert.
   const patchTextGrow = useCallback(
     (elId: string, patch: Partial<TextElement>) => {
       const cur = projectRef.current;
@@ -211,7 +210,17 @@ export function EditorPage() {
         return;
       }
       const merged = { ...el, ...patch };
-      if (merged.text.trim()) {
+      // Nur neu einpassen, wenn sich Text ODER Schriftgroesse/-art
+      // tatsaechlich aendern (das beeinflusst, wieviel Platz noetig ist) -
+      // NICHT bei jeder Inspector-Aenderung (Farbe, Ausrichtung, Flaeche
+      // usw. laufen ebenfalls ueber patchTextGrow). Sonst wuerde z.B. ein
+      // Klick auf eine Textfarbe die vom Nutzer manuell gesetzte Groesse
+      // ungefragt mit veraendern.
+      const affectsSize =
+        ("text" in patch && patch.text !== el.text) ||
+        ("fontSize" in patch && patch.fontSize !== el.fontSize) ||
+        ("fontFamily" in patch && patch.fontFamily !== el.fontFamily);
+      if (affectsSize && merged.text.trim()) {
         // Breite darf nicht in ein anderes Element hineinwachsen, das
         // rechts daneben liegt und sich vertikal mit dieser Box ueberlappt
         // (z.B. ein Foto neben einer zweispaltigen Textspalte) - sonst
@@ -228,7 +237,11 @@ export function EditorPage() {
         const neededW = fitTextBoxWidth(merged.text, merged.fontSize, maxW, merged.fontWeight, merged.fontFamily);
         const newW = Math.max(merged.w, neededW);
         const neededH = fitTextBoxHeight(merged.text, newW, merged.fontSize, merged.fontWeight, merged.fontFamily);
-        patch = { ...patch, w: newW, h: Math.min(neededH, 1 - merged.y) };
+        // Wie bei der Breite: nur WACHSEN, falls der Text sonst abgeschnitten
+        // waere - eine vom Nutzer manuell per Eckgriff gesetzte (auch
+        // kleinere) Hoehe wird nie eigenmaechtig wieder verkleinert.
+        const newH = Math.max(merged.h, Math.min(neededH, 1 - merged.y));
+        patch = { ...patch, w: newW, h: newH };
       }
       patchElement(elId, patch);
     },

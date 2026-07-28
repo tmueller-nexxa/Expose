@@ -121,6 +121,13 @@
 .el {
   position: absolute;
   box-sizing: border-box;
+  /* Ohne touch-action:none kann der Browser eine SENKRECHTE Ziehgeste
+     (Touch/Trackpad) als natives Scrollen der Seite interpretieren, noch
+     bevor das eigene Pointer-Handling (startPointerDrag) recht greift -
+     preventDefault() im pointerdown-Handler reicht dafuer nicht immer aus.
+     Betrifft vor allem Hoehen-Aenderungen (vertikale Ziehrichtung), waehrend
+     horizontales Ziehen (Breite) meist unbeeintraechtigt bleibt. */
+  touch-action: none;
 }
 .el.selected {
   outline: 2px solid var(--brand);
@@ -250,6 +257,7 @@
   border: 2px solid var(--brand);
   border-radius: 3px;
   z-index: 10;
+  touch-action: none;
 }
 .handle.nw { left: -6px; top: -6px; cursor: nwse-resize; }
 .handle.ne { right: -6px; top: -6px; cursor: nesw-resize; }
