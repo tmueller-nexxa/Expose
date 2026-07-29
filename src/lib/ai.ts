@@ -1056,9 +1056,10 @@ export interface PhotoAssignment {
   caption: string;
 }
 
-// Dateiname als ZUSAETZLICHER Hinweis fuer die Abschnitts-Zuordnung (z.B.
-// "Kueche_01.jpg" oder "Bad_EG.jpg") - der Bildinhalt bleibt aber
-// massgeblich, ein Dateiname kann generisch (IMG_0042.jpg) oder falsch sein.
+// Dateiname fuer die Abschnitts-Zuordnung (z.B. "Kueche_01.jpg" oder
+// "Bad_EG.jpg") - hat Vorrang vor dem Bildinhalt, da er den vom Nutzer
+// vorgesehenen Aufbau widerspiegelt. Nur bei generischen Namen
+// (z.B. IMG_0042.jpg) entscheidet stattdessen der Bildinhalt.
 export interface PhotoInput {
   src: string;
   name?: string;
@@ -1117,7 +1118,7 @@ async function analyzePhotoSectionsChunk(
     "Gibt es MEHRERE Abschnitte der Art \"grundriss\" (z.B. fuer verschiedene Geschosse wie Keller-, Erd-, Obergeschoss), ordne jedes Grundriss-Bild anhand der im Bild sichtbaren Beschriftung/Geschossbezeichnung (z.B. \"EG\", \"OG\", \"Keller\") dem Abschnitt zu, dessen Titel dazu passt. " +
     "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
-    "Zu jedem Foto wird auch dessen Dateiname genannt - nutze ihn als ZUSAETZLICHEN Hinweis (Dateinamen enthalten oft die Raumart, z.B. \"Kueche_01.jpg\" oder \"Bad_EG.png\"), aber der tatsaechliche Bildinhalt hat immer Vorrang, falls Dateiname und Bildinhalt sich widersprechen oder der Dateiname generisch ist (z.B. \"IMG_0042.jpg\"). " +
+    "Zu jedem Foto wird auch dessen Dateiname genannt - der Dateiname hat VORRANG vor dem Bildinhalt, da er direkten Bezug zur vom Nutzer vorgesehenen Aufbaustruktur hat (z.B. \"Kueche_01.jpg\" oder \"Bad_EG.png\" ordnest du dem Abschnitt zu, dessen Titel dazu passt, AUCH wenn das Bild selbst mehrdeutig oder auf den ersten Blick anders wirkt). Nur wenn der Dateiname KEINEN erkennbaren Bezug zu einem der Abschnitte hat (z.B. generische Namen wie \"IMG_0042.jpg\", \"Foto (3).png\" oder eine reine Zahl), entscheidet stattdessen der Bildinhalt. " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
 
   const content: (ImageBlock | { type: "text"; text: string })[] = [];
