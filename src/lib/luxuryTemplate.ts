@@ -287,7 +287,7 @@ export function addPageNumbers(pages: Page[]): void {
   pages.forEach((p, i) => p.elements.push(...pageNumberMark(i + 1)));
 }
 
-function image(x: number, y: number, w: number, h: number, src: string): PageElement {
+function image(x: number, y: number, w: number, h: number, src: string, fit: "cover" | "contain" = "cover"): PageElement {
   return {
     id: uid("el"),
     kind: "image",
@@ -297,7 +297,7 @@ function image(x: number, y: number, w: number, h: number, src: string): PageEle
     h,
     z: 2,
     src,
-    fit: "cover",
+    fit,
   };
 }
 
@@ -371,33 +371,38 @@ function photoLayout(
   w: number,
   h: number,
   minCount = 1,
+  // "contain" statt "cover" fuer Inhalte, die NICHT beschnitten werden
+  // duerfen (z.B. technische Grundriss-Zeichnungen) - eine Foto-Komposition
+  // darf zugunsten der Bildwirkung beschnitten werden, eine Planzeichnung
+  // muss dagegen immer vollstaendig sichtbar bleiben.
+  fit: "cover" | "contain" = "cover",
 ): PageElement[] {
   const gap = 0.014;
   const list = photos.length > 0 ? photos : Array.from({ length: Math.max(1, minCount) }, () => "");
   const n = Math.min(list.length, 4);
   if (n === 0) return [];
-  if (n === 1) return [image(x, y, w, h, list[0])];
+  if (n === 1) return [image(x, y, w, h, list[0], fit)];
   if (n === 2) {
     const hh = (h - gap) / 2;
-    return [image(x, y, w, hh, list[0]), image(x, y + hh + gap, w, hh, list[1])];
+    return [image(x, y, w, hh, list[0], fit), image(x, y + hh + gap, w, hh, list[1], fit)];
   }
   if (n === 3) {
     const bigH = h * 0.6;
     const smallW = (w - gap) / 2;
     const smallH = h - bigH - gap;
     return [
-      image(x, y, w, bigH, list[0]),
-      image(x, y + bigH + gap, smallW, smallH, list[1]),
-      image(x + smallW + gap, y + bigH + gap, smallW, smallH, list[2]),
+      image(x, y, w, bigH, list[0], fit),
+      image(x, y + bigH + gap, smallW, smallH, list[1], fit),
+      image(x + smallW + gap, y + bigH + gap, smallW, smallH, list[2], fit),
     ];
   }
   const hw = (w - gap) / 2;
   const hh = (h - gap) / 2;
   return [
-    image(x, y, hw, hh, list[0]),
-    image(x + hw + gap, y, hw, hh, list[1]),
-    image(x, y + hh + gap, hw, hh, list[2]),
-    image(x + hw + gap, y + hh + gap, hw, hh, list[3]),
+    image(x, y, hw, hh, list[0], fit),
+    image(x + hw + gap, y, hw, hh, list[1], fit),
+    image(x, y + hh + gap, hw, hh, list[2], fit),
+    image(x + hw + gap, y + hh + gap, hw, hh, list[3], fit),
   ];
 }
 
@@ -505,7 +510,10 @@ function grundrissPage(title: string, text: string, photos: string[]): Page {
   // fehlenden Grundriss durchlaufen zu lassen (siehe photoLayout()).
   const photoTop = headingEl.y + headingEl.h + 0.03;
   const photoArea = 0.55;
-  els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoArea));
+  // "contain" statt "cover": eine Grundriss-Zeichnung ist keine Foto-
+  // Komposition, sie muss immer VOLLSTAENDIG sichtbar bleiben statt
+  // (wie ein Foto) auf die Zielflaeche zurechtgeschnitten zu werden.
+  els.push(...photoLayout(photos, MARGIN, photoTop, CONTENT_W, photoArea, 1, "contain"));
   const textTop = photoTop + photoArea + 0.03;
   const bodyEl = body(text, MARGIN, textTop, CONTENT_W, Math.max(0.12, CONTENT_BOTTOM - textTop), {
     maxH: CONTENT_BOTTOM - textTop,
@@ -620,7 +628,10 @@ function documentPage(title: string, img: string): Page {
   els.push(textPanel(headingEl, CREAM));
   els.push(rule(MARGIN, 0.075, 0.1));
   els.push(headingEl);
-  els.push(image(MARGIN, photoTop, CONTENT_W, Math.max(0.3, 0.94 - photoTop), img));
+  // "contain" statt "cover": ein Dokumentenscan (Energieausweis-Kennwerte/
+  // -Diagramme) darf nicht beschnitten werden - jeder Rand kann relevante
+  // Angaben tragen.
+  els.push(image(MARGIN, photoTop, CONTENT_W, Math.max(0.3, 0.94 - photoTop), img, "contain"));
   return page(title, WHITE, els);
 }
 
