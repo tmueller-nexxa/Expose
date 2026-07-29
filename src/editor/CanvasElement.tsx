@@ -286,7 +286,6 @@ export function CanvasElement(props: Props) {
   // --- Text / Heading ----------------------------------------------------
   const t = el as TextElement;
   const isEmpty = !t.text && !editing;
-  const pad = t.text || editing ? Math.max(3, t.fontSize * scale * 0.35) : 0;
   const justify =
     t.align === "center" ? "center" : t.align === "right" ? "flex-end" : "flex-start";
 
@@ -301,7 +300,6 @@ export function CanvasElement(props: Props) {
           ? "0 1px 4px rgba(0,0,0,0.65), 0 0 16px rgba(0,0,0,0.4)"
           : undefined,
         justifyContent: justify,
-        padding: `${pad}px ${pad * 1.2}px`,
         borderRadius: t.background.startsWith("rgba(0,0,0,0") ? 0 : 6,
         cursor: editing ? "text" : "move",
       }}

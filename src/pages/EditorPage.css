@@ -214,7 +214,6 @@
 }
 .el-text {
   display: flex;
-  padding: 10px 12px;
   cursor: move;
 }
 .el-text .txt {

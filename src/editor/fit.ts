@@ -60,7 +60,9 @@ export function fitFontSize(
   const isScript = (opts.fontFamily ?? "").toLowerCase().includes("tangerine");
   const min = opts.min ?? 9;
   const max = opts.max ?? 26;
-  const padding = opts.padding ?? 12;
+  // Kein innerer Rand mehr (siehe CanvasElement.tsx - Textfelder rendern
+  // ohne Polsterung), darum padding hier standardmaessig 0.
+  const padding = opts.padding ?? 0;
   const lineHeight = opts.lineHeight ?? (isScript ? 1.7 : 1.35);
   const weight = opts.weight ?? 400;
 
@@ -88,9 +90,6 @@ export function fitTextBoxWidth(
   weight = 400,
   fontFamily?: string,
 ): number {
-  const isScript = (fontFamily ?? "").toLowerCase().includes("tangerine");
-  const padV = Math.max(3, fontSize * (isScript ? 0.45 : 0.35));
-  const padH = padV * 1.2;
   const c = measureCtx();
   c.font = `${weight} ${fontSize}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
   let maxLineW = 0;
@@ -98,16 +97,17 @@ export function fitTextBoxWidth(
     const w = c.measureText(paragraph).width;
     if (w > maxLineW) maxLineW = w;
   }
-  const neededPx = maxLineW + padH * 2;
+  // Kein innerer Rand mehr (siehe CanvasElement.tsx) - die Box braucht nur
+  // exakt die gemessene Textbreite, keine zusaetzliche Polsterung.
   const maxPx = Math.max(10, maxWFrac * REF_W);
-  return Math.min(neededPx, maxPx) / REF_W;
+  return Math.min(maxLineW, maxPx) / REF_W;
 }
 
 // Ermittelt die noetige Boxhoehe (Seitenanteil 0..1), damit ein Textfeld bei
 // gegebener Breite/Schriftgroesse den Text VOLLSTAENDIG zeigt (kein
-// abgeschnittener Text durch overflow:hidden). Polsterung/Zeilenhoehe
-// entsprechen exakt der Darstellung in CanvasElement.tsx, damit die
-// berechnete Groesse wirklich passt.
+// abgeschnittener Text durch overflow:hidden). Kein innerer Rand mehr
+// (Zeilenhoehe entspricht exakt der Darstellung in CanvasElement.tsx),
+// damit die berechnete Groesse wirklich passt.
 export function fitTextBoxHeight(
   text: string,
   boxWFrac: number,
@@ -122,10 +122,8 @@ export function fitTextBoxHeight(
   const isScript = (fontFamily ?? "").toLowerCase().includes("tangerine");
   const lineHeightMul = isScript ? 1.7 : 1.35;
   const boxW = boxWFrac * REF_W;
-  const padV = Math.max(3, fontSize * (isScript ? 0.45 : 0.35));
-  const padH = padV * 1.2;
-  const innerW = Math.max(10, boxW - padH * 2);
+  const innerW = Math.max(10, boxW);
   const lines = Math.max(1, wrapLines(text, fontSize, weight, innerW, fontFamily));
-  const heightPx = lines * fontSize * lineHeightMul + padV * 2;
+  const heightPx = lines * fontSize * lineHeightMul;
   return heightPx / REF_H;
 }
