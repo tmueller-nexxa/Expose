@@ -837,6 +837,162 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// --- "KI Exposé": Personenfoto + Stilpunkte-/Guetesiegel-Badge auf der
+// Ansprechpartner-Seite finden -----------------------------------------
+//
+// Fuer die neu im Luxus-Design aufgebaute Ansprechpartner-Seite (siehe
+// buildBoilerplateSection() in KiExposePage.tsx) sollen NUR diese zwei
+// Bildelemente aus der Originalvorlage uebernommen werden - alles andere
+// (Farben/Layout/Formen) wird komplett neu aufgebaut. Bewusst ein
+// eigenes, eng gefasstes Werkzeug statt der generischen page_design-
+// Blockerkennung (analyzePagesDesign) zu bemuehen: die generische
+// Erkennung liefert "irgendwelche" Bild-Bloecke ohne semantische
+// Unterscheidung, wodurch z.B. ein flaechiger Text-/Adressblock
+// faelschlich als Foto erkannt und das eigentliche Portraitfoto
+// uebersehen werden kann.
+
+export interface KontaktPhotoBlock {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface KontaktPhotosResult {
+  personPhoto?: KontaktPhotoBlock;
+  stylePhoto?: KontaktPhotoBlock;
+}
+
+const KONTAKT_BLOCK_SCHEMA = {
+  type: "object",
+  properties: {
+    x: { type: "number" },
+    y: { type: "number" },
+    w: { type: "number" },
+    h: { type: "number" },
+  },
+  required: ["x", "y", "w", "h"],
+};
+
+const KONTAKT_PHOTOS_TOOL = {
+  name: "kontakt_photos",
+  description:
+    "Findet auf einer Ansprechpartner-/Kontaktseite gezielt genau zwei moegliche Bildelemente: das Portraitfoto der Ansprechperson und ein Guetesiegel-/Auszeichnungs-Abzeichen.",
+  input_schema: {
+    type: "object",
+    properties: {
+      pages: {
+        type: "array",
+        description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Seitenbilder, eines pro Bild.",
+        items: {
+          type: "object",
+          properties: {
+            personPhoto: {
+              ...KONTAKT_BLOCK_SCHEMA,
+              description:
+                "Position/Groesse (Anteile 0..1) des Portrait-/Passfotos EINER PERSON (Immobilienmakler/in), falls auf der Seite vorhanden - sonst Feld komplett weglassen.",
+            },
+            stylePhoto: {
+              ...KONTAKT_BLOCK_SCHEMA,
+              description:
+                "Position/Groesse (Anteile 0..1) eines Guetesiegel-/Auszeichnungs-/Marken-Abzeichens (z.B. \"Stilpunkte\", TÜV-Siegel, Award-Logo - typischerweise eine eigenstaendige, meist dunkle oder farbige Grafik mit wenig Text), falls auf der Seite vorhanden - sonst Feld komplett weglassen.",
+            },
+          },
+        },
+      },
+    },
+    required: ["pages"],
+  },
+};
+
+// Findet Personenfoto + Stilpunkte-/Guetesiegel-Badge auf 1-2 Ansprechpartner-
+// Seiten (mehr kommen praktisch nicht vor) - bewusst EIN einzelner Aufruf
+// ohne Batching/Chunking wie bei den groesseren Analyse-Funktionen oben, da
+// die Eingabemenge hier immer klein ist. Liefert bei jedem Fehler (kein
+// API-Key, Netzwerkfehler, unbrauchbare Antwort) einfach leere Ergebnisse
+// zurueck, statt die gesamte Exposé-Generierung fehlschlagen zu lassen - der
+// Aufrufer zeigt die Ansprechpartner-Seite dann eben ohne Fotos.
+export async function analyzeKontaktPhotos(
+  api: ApiSettings,
+  pageImages: string[],
+): Promise<KontaktPhotosResult[]> {
+  const empty = pageImages.map(() => ({}));
+  if (!aiReady(api) || pageImages.length === 0) return empty;
+
+  try {
+    const { blocks: imageBlocks, validIndices } = await buildImageBlocks(pageImages);
+    if (imageBlocks.length === 0) return empty;
+
+    const system =
+      "Du analysierst die \"Ansprechpartner\"/\"Kontakt\"-Seite eines Immobilien-Exposés. " +
+      "Suche NUR nach zwei spezifischen Bildelementen, falls vorhanden: " +
+      "(1) personPhoto: ein Foto EINER PERSON (Portrait-/Passfoto des Immobilienmaklers/der Maklerin) - kein Text, kein Firmenlogo, kein Icon. " +
+      "(2) stylePhoto: ein Guetesiegel-/Auszeichnungs-/Zertifikats-Badge oder aehnliche eigenstaendige Marken-Grafik (z.B. \"Stilpunkte\", TÜV-Siegel, Award-Logo) - typischerweise ein abgegrenztes, meist dunkles oder farbiges Abzeichen mit wenig Text. " +
+      "Verwechsle NICHT Text-/Adress-/Kontaktdaten-Bloecke mit einem Bild - diese sind KEIN personPhoto und KEIN stylePhoto. Das allgemeine Firmenlogo (falls vorhanden) ist ebenfalls WEDER personPhoto NOCH stylePhoto. " +
+      "Ist eines der beiden Elemente auf einer Seite nicht vorhanden, lasse das jeweilige Feld komplett weg statt zu raten. " +
+      "Koordinaten sind Anteile 0..1 der Seitenbreite/-hoehe, Ursprung oben links. " +
+      "Antworte ausschliesslich ueber das Werkzeug \"kontakt_photos\" mit GENAU einem Eintrag pro uebergebenem Seitenbild, in derselben Reihenfolge.";
+
+    let data;
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 2 && !data; attempt++) {
+      try {
+        data = await callAnthropic(api, {
+          model: api.model,
+          max_tokens: 1000,
+          system,
+          tools: [KONTAKT_PHOTOS_TOOL],
+          tool_choice: { type: "tool", name: "kontakt_photos" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                ...imageBlocks,
+                {
+                  type: "text",
+                  text: `Hier sind ${imageBlocks.length} Seite(n) einer Ansprechpartner-/Kontaktseite. Finde jeweils Portraitfoto und Guetesiegel-/Auszeichnungs-Abzeichen, falls vorhanden.`,
+                },
+              ],
+            },
+          ],
+        });
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) await sleep(800 * attempt);
+      }
+    }
+    if (!data) throw lastErr ?? new Error("unbekannt");
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as { pages?: KontaktPhotosResult[] } | undefined;
+    const raw = input?.pages ?? [];
+
+    const toBlock = (b: unknown): KontaktPhotoBlock | undefined => {
+      const block = b as Partial<KontaktPhotoBlock> | undefined;
+      if (!block || !Number.isFinite(Number(block.w)) || !Number.isFinite(Number(block.h))) return undefined;
+      return {
+        x: clamp01(block.x),
+        y: clamp01(block.y),
+        w: clamp01(block.w, 0.01),
+        h: clamp01(block.h, 0.01),
+      };
+    };
+
+    const result: KontaktPhotosResult[] = pageImages.map(() => ({}));
+    validIndices.forEach((origIdx, i) => {
+      const entry = raw[i];
+      if (!entry) return;
+      result[origIdx] = {
+        personPhoto: toBlock(entry.personPhoto),
+        stylePhoto: toBlock(entry.stylePhoto),
+      };
+    });
+    return result;
+  } catch {
+    return empty;
+  }
+}
+
 // --- "KI Exposé": Seitenaufbau aus Beispielen ableiten -------------------
 //
 // Anders als die Vektor-Grafik-Nachbildung (oben) wird hier NUR der grobe,
@@ -1060,9 +1216,16 @@ export interface PhotoAssignment {
 // "Bad_EG.jpg") - hat Vorrang vor dem Bildinhalt, da er den vom Nutzer
 // vorgesehenen Aufbau widerspiegelt. Nur bei generischen Namen
 // (z.B. IMG_0042.jpg) entscheidet stattdessen der Bildinhalt.
+// pageText: bei aus einem PDF gerenderten Seiten (z.B. Grundriss-Scans in
+// einem Datenblatt) die ECHTE, aus der PDF-Textebene extrahierte Beschriftung
+// dieser Seite (siehe renderPdfPages() in lib/pdf.ts) - haeufig steht dort
+// das Geschoss ("Grundriss Erdgeschoss", "Kellergeschoss" o.ae.) als
+// selektierbarer Text, was zuverlaessiger ist als ein aus dem Bild optisch
+// herausgelesenes Klein-Label. Hat dieselbe Prioritaet wie der Dateiname.
 export interface PhotoInput {
   src: string;
   name?: string;
+  pageText?: string;
 }
 
 function buildPhotoSectionTool(sectionCount: number) {
@@ -1114,17 +1277,20 @@ async function analyzePhotoSectionsChunk(
     `Folgende Abschnitte stehen zur Auswahl (Index. "Titel" (Art)):\n${sectionsDesc}\n\n` +
     "Waehle pro Foto den inhaltlich am besten passenden Abschnitt anhand von TITEL UND Art - mehrere Abschnitte koennen dieselbe Art haben (z.B. \"Küche\" und \"Bad\" sind beide \"ausstattung\"), dann entscheidet allein der Titel, welcher Abschnitt inhaltlich zum Fotoinhalt passt (ein Badezimmerfoto gehoert zum Abschnitt \"Bad\", NICHT zu \"Küche\", auch wenn beide dieselbe Art haben). " +
     "WICHTIG: Ein Abschnitt der Art \"titel\" ODER mit einem Titel wie \"Willkommen\" ist die Titel-/Willkommensseite und braucht ein repraesentatives Aussen-/Uebersichtsfoto (Fassade, Luftaufnahme, Gesamtansicht des Gebaeudes von aussen) - ist unter den hier gezeigten Fotos ein geeignetes Aussen-/Uebersichtsfoto, ordne es bevorzugt diesem Abschnitt zu, auch wenn dessen Abschnittstitel das nicht woertlich sagt (z.B. eine kreative Ueberschrift wie \"Ihr neues Zuhause\"). " +
-    "Ein Abschnitt mit einem Titel wie \"WOW-Effekt\"/\"Highlight\" braucht GENAU EIN besonders eindrucksvolles, repraesentatives Foto, das die staerksten Vorzuege der Immobilie auf einen Blick zeigt (z.B. die beeindruckendste Innen- oder Aussenperspektive) - nicht mehrere Fotos. " +
-    "Gibt es MEHRERE Abschnitte der Art \"grundriss\" (z.B. fuer verschiedene Geschosse wie Keller-, Erd-, Obergeschoss), ordne jedes Grundriss-Bild anhand der im Bild sichtbaren Beschriftung/Geschossbezeichnung (z.B. \"EG\", \"OG\", \"Keller\") dem Abschnitt zu, dessen Titel dazu passt. " +
+    "Ein Abschnitt mit einem Titel wie \"WOW-Effekt\"/\"Highlight\"/\"Vorteile\" soll die genannten Verkaufsargumente/Vorzuege BILDLICH unterstreichen: ordne ihm BIS ZU DREI besonders eindrucksvolle, repraesentative Fotos zu (unterschiedliche Perspektiven/Bereiche der Immobilie, die die staerksten Vorzuege zeigen), nicht nur eines - aber auch nicht mehr als drei. " +
+    "Gibt es MEHRERE Abschnitte der Art \"grundriss\" (z.B. fuer verschiedene Geschosse wie Keller-, Erd-, Obergeschoss), ordne jedes Grundriss-Bild dem Abschnitt zu, dessen Titel zum Geschoss passt. " +
+    "WICHTIG fuer Grundrisse: Steht bei einem Foto ein \"Seitentext\" dabei (aus der PDF-Textebene extrahiert, z.B. \"Grundriss Erdgeschoss\" oder \"Kellergeschoss\"), ist DAS die zuverlaessigste Geschoss-Angabe und hat Vorrang vor allem anderen (auch vor Dateiname und einer im Bild sichtbaren Beschriftung). Gibt es keinen Seitentext, nutze eine im Bild sichtbare Beschriftung/Geschossbezeichnung (z.B. \"EG\", \"OG\", \"Keller\"). Gibt es weder Seitentext noch lesbare Beschriftung im Bild, ordne trotzdem dem inhaltlich am ehesten passenden Grundriss-Abschnitt zu, NIEMALS sectionIndex -1 nur weil das Geschoss unklar ist. " +
     "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
-    "Zu jedem Foto wird auch dessen Dateiname genannt - der Dateiname hat VORRANG vor dem Bildinhalt, da er direkten Bezug zur vom Nutzer vorgesehenen Aufbaustruktur hat (z.B. \"Kueche_01.jpg\" oder \"Bad_EG.png\" ordnest du dem Abschnitt zu, dessen Titel dazu passt, AUCH wenn das Bild selbst mehrdeutig oder auf den ersten Blick anders wirkt). Nur wenn der Dateiname KEINEN erkennbaren Bezug zu einem der Abschnitte hat (z.B. generische Namen wie \"IMG_0042.jpg\", \"Foto (3).png\" oder eine reine Zahl), entscheidet stattdessen der Bildinhalt. " +
+    "Zu jedem Foto wird auch dessen Dateiname genannt - der Dateiname hat VORRANG vor dem Bildinhalt, da er direkten Bezug zur vom Nutzer vorgesehenen Aufbaustruktur hat (z.B. \"Kueche_01.jpg\" oder \"Bad_EG.png\" ordnest du dem Abschnitt zu, dessen Titel dazu passt, AUCH wenn das Bild selbst mehrdeutig oder auf den ersten Blick anders wirkt). Nur wenn der Dateiname KEINEN erkennbaren Bezug zu einem der Abschnitte hat (z.B. generische Namen wie \"IMG_0042.jpg\", \"Foto (3).png\" oder eine reine Zahl), entscheidet stattdessen der Bildinhalt (bzw. bei Grundrissen der Seitentext, siehe oben). " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
 
   const content: (ImageBlock | { type: "text"; text: string })[] = [];
   validIndices.forEach((origIdx, i) => {
     const name = chunk[origIdx]?.name;
-    content.push({ type: "text", text: `Foto ${i + 1}, Dateiname: "${name || "unbekannt"}":` });
+    const pageText = chunk[origIdx]?.pageText?.trim();
+    const pageTextPart = pageText ? `, Seitentext: "${pageText.slice(0, 300)}"` : "";
+    content.push({ type: "text", text: `Foto ${i + 1}, Dateiname: "${name || "unbekannt"}"${pageTextPart}:` });
     content.push(imageBlocks[i]);
   });
   content.push({

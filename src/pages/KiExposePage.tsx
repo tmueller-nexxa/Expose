@@ -14,7 +14,7 @@ import {
 import {
   aiReady,
   analyzeExposeStructure,
-  analyzePagesDesign,
+  analyzeKontaktPhotos,
   analyzePhotoSections,
   MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
@@ -80,26 +80,35 @@ async function buildBoilerplateSection(
     .filter((p) => p.text?.trim())
     .map((p) => ({ kind: p.kind, text: p.text ?? "" }));
 
-  // Fotos der Ansprechpartner-Seite (Makler-Portrait, ggf. ein weiteres
-  // Bild wie ein Guetesiegel) aus der Originalseite herausloesen - die
-  // Seite wird nicht mehr als Bild uebernommen, darum muessen die Fotos
-  // einzeln als eigene Bild-Elemente weiterleben. Das Logo kommt direkt
-  // aus dem Datenbereich (data.logo), nicht aus der Seite herausgeschnitten.
+  // Fotos der Ansprechpartner-Seite (Makler-Portrait + ggf. Stilpunkte-/
+  // Guetesiegel-Badge) aus der Originalseite herausloesen - die Seite wird
+  // nicht mehr als Bild uebernommen, darum muessen die Fotos einzeln als
+  // eigene Bild-Elemente weiterleben. Das Logo kommt direkt aus dem
+  // Datenbereich (data.logo), nicht aus der Seite herausgeschnitten.
+  // Dediziertes, eng gefasstes Werkzeug (analyzeKontaktPhotos) statt der
+  // generischen page_design-Blockerkennung: verhindert, dass z.B. ein
+  // Text-/Adressblock faelschlich als Foto erkannt wird und dadurch das
+  // eigentliche Portraitfoto verloren geht.
   const kontaktPages = boilerplate.pages.filter((p) => p.kind === "kontakt");
   const kontaktImages: string[] = [];
   if (kontaktPages.length > 0 && aiReady(api)) {
     try {
-      const res = await analyzePagesDesign(api, kontaktPages.map((p) => p.image));
-      if (res.ok) {
-        for (let i = 0; i < kontaktPages.length; i++) {
-          const blocks = (res.pages[i]?.blocks ?? []).filter((b) => b.type === "image");
-          for (const b of blocks.slice(0, 2 - kontaktImages.length)) {
-            const cropped = await cropRegionFromImage(kontaktPages[i].image, b);
-            kontaktImages.push(cropped);
-          }
-          if (kontaktImages.length >= 2) break;
+      const results = await analyzeKontaktPhotos(api, kontaktPages.map((p) => p.image));
+      let personPhoto: string | null = null;
+      let stylePhoto: string | null = null;
+      for (let i = 0; i < kontaktPages.length; i++) {
+        const r = results[i];
+        if (!personPhoto && r?.personPhoto) {
+          personPhoto = await cropRegionFromImage(kontaktPages[i].image, r.personPhoto);
+        }
+        if (!stylePhoto && r?.stylePhoto) {
+          stylePhoto = await cropRegionFromImage(kontaktPages[i].image, r.stylePhoto);
         }
       }
+      // Reihenfolge fest: Personenfoto zuerst (gross/prominent), Stilpunkte-
+      // Badge danach (kleiner) - passt zur Bild-Anordnung in ansprechpartnerPage().
+      if (personPhoto) kontaktImages.push(personPhoto);
+      if (stylePhoto) kontaktImages.push(stylePhoto);
     } catch {
       /* Fotoerkennung fehlgeschlagen - Seite bekommt dann kein Foto, Text bleibt trotzdem erhalten. */
     }
@@ -282,13 +291,16 @@ export function KiExposePage() {
       const DUPLICATE_HASH_THRESHOLD = 6; // von 64 Bits (8x8-Hash)
       const DUPLICATE_COLOR_THRESHOLD = 20; // euklidischer RGB-Abstand
       // Der Dateiname jedes Fotos wird mit durchgereicht (siehe PhotoInput in
-      // ai.ts) - dient der KI als ZUSAETZLICHER Hinweis bei der Abschnitts-
-      // Zuordnung (z.B. "Kueche_01.jpg"), der Bildinhalt bleibt aber
-      // massgeblich.
-      const photoPool: { src: string; name: string }[] = [];
+      // ai.ts) und hat Vorrang bei der Abschnitts-Zuordnung. Bei aus einem PDF
+      // gerenderten Seiten (z.B. Grundriss-Scans) wird zusaetzlich der ECHTE,
+      // aus der PDF-Textebene extrahierte Seitentext mitgegeben - haeufig
+      // steht dort die Geschossbezeichnung ("Grundriss Erdgeschoss" o.ae.),
+      // was zuverlaessiger ist als ein optisch aus dem Bild herausgelesenes
+      // Klein-Label.
+      const photoPool: { src: string; name: string; pageText?: string }[] = [];
       const photoSignatures: { hash: string; avgColor: [number, number, number] }[] = [];
       const seenExact = new Set<string>();
-      const addPhoto = async (src: string, name: string) => {
+      const addPhoto = async (src: string, name: string, pageText?: string) => {
         if (seenExact.has(src)) return;
         seenExact.add(src);
         let sig: { hash: string; avgColor: [number, number, number] } | null = null;
@@ -309,7 +321,7 @@ export function KiExposePage() {
           return;
         }
         if (sig && sig.hash) photoSignatures.push(sig);
-        photoPool.push({ src, name });
+        photoPool.push({ src, name, pageText });
       };
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
@@ -338,7 +350,7 @@ export function KiExposePage() {
           const p = rendered[idx];
           if (p.image) {
             const name = rendered.length > 1 ? `${f.name} (Seite ${idx + 1})` : f.name;
-            await addPhoto(p.image, name);
+            await addPhoto(p.image, name, p.text);
           }
           if (p.text) datasheetText += `\n\n[${f.name}]\n${p.text}`;
         }
