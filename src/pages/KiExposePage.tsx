@@ -281,10 +281,14 @@ export function KiExposePage() {
       // Durchschnittsfarbe nahe beieinander liegt.
       const DUPLICATE_HASH_THRESHOLD = 6; // von 64 Bits (8x8-Hash)
       const DUPLICATE_COLOR_THRESHOLD = 20; // euklidischer RGB-Abstand
-      const photoPool: string[] = [];
+      // Der Dateiname jedes Fotos wird mit durchgereicht (siehe PhotoInput in
+      // ai.ts) - dient der KI als ZUSAETZLICHER Hinweis bei der Abschnitts-
+      // Zuordnung (z.B. "Kueche_01.jpg"), der Bildinhalt bleibt aber
+      // massgeblich.
+      const photoPool: { src: string; name: string }[] = [];
       const photoSignatures: { hash: string; avgColor: [number, number, number] }[] = [];
       const seenExact = new Set<string>();
-      const addPhoto = async (src: string) => {
+      const addPhoto = async (src: string, name: string) => {
         if (seenExact.has(src)) return;
         seenExact.add(src);
         let sig: { hash: string; avgColor: [number, number, number] } | null = null;
@@ -305,7 +309,7 @@ export function KiExposePage() {
           return;
         }
         if (sig && sig.hash) photoSignatures.push(sig);
-        photoPool.push(src);
+        photoPool.push({ src, name });
       };
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
@@ -327,11 +331,15 @@ export function KiExposePage() {
         if (rendered[0]?.image) energieausweisImage = rendered[0].image;
       }
 
-      for (const f of imageFiles) await addPhoto(f.dataUrl);
+      for (const f of imageFiles) await addPhoto(f.dataUrl, f.name);
       for (const f of datasheetPdfFiles) {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
-        for (const p of rendered) {
-          if (p.image) await addPhoto(p.image);
+        for (let idx = 0; idx < rendered.length; idx++) {
+          const p = rendered[idx];
+          if (p.image) {
+            const name = rendered.length > 1 ? `${f.name} (Seite ${idx + 1})` : f.name;
+            await addPhoto(p.image, name);
+          }
           if (p.text) datasheetText += `\n\n[${f.name}]\n${p.text}`;
         }
       }
@@ -368,7 +376,7 @@ export function KiExposePage() {
         kind === "titel" ? 1 : kind === "grundriss" ? 6 : kind === "galerie" || kind === "kontakt" ? 4 : 3;
       const bySection: { src: string; caption: string }[][] = sections.map(() => []);
       const overflow: string[] = [];
-      photoPool.forEach((src, i) => {
+      photoPool.forEach(({ src }, i) => {
         const a = assignments[i] ?? { sectionIndex: -1, caption: "" };
         if (a.sectionIndex >= 0 && a.sectionIndex < sections.length) {
           bySection[a.sectionIndex].push({ src, caption: a.caption });

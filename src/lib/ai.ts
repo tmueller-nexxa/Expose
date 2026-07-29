@@ -1056,6 +1056,14 @@ export interface PhotoAssignment {
   caption: string;
 }
 
+// Dateiname als ZUSAETZLICHER Hinweis fuer die Abschnitts-Zuordnung (z.B.
+// "Kueche_01.jpg" oder "Bad_EG.jpg") - der Bildinhalt bleibt aber
+// massgeblich, ein Dateiname kann generisch (IMG_0042.jpg) oder falsch sein.
+export interface PhotoInput {
+  src: string;
+  name?: string;
+}
+
 function buildPhotoSectionTool(sectionCount: number) {
   return {
     name: "photo_sections",
@@ -1093,10 +1101,10 @@ function buildPhotoSectionTool(sectionCount: number) {
 
 async function analyzePhotoSectionsChunk(
   api: ApiSettings,
-  chunk: string[],
+  chunk: PhotoInput[],
   sections: ExposeSection[],
 ): Promise<PhotoAssignment[] | AiError> {
-  const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk);
+  const { blocks: imageBlocks, validIndices } = await buildImageBlocks(chunk.map((p) => p.src));
   if (imageBlocks.length === 0) return chunk.map(() => ({ sectionIndex: -1, caption: "" }));
 
   const sectionsDesc = sections.map((s, i) => `${i}. "${s.title}" (${s.kind})`).join("\n");
@@ -1109,7 +1117,19 @@ async function analyzePhotoSectionsChunk(
     "Gibt es MEHRERE Abschnitte der Art \"grundriss\" (z.B. fuer verschiedene Geschosse wie Keller-, Erd-, Obergeschoss), ordne jedes Grundriss-Bild anhand der im Bild sichtbaren Beschriftung/Geschossbezeichnung (z.B. \"EG\", \"OG\", \"Keller\") dem Abschnitt zu, dessen Titel dazu passt. " +
     "Gibt es keinen inhaltlich passenden Abschnitt, antworte mit sectionIndex -1. " +
     "Beschreibe jedes Foto kurz und sachlich (Raumart/Ansicht), keine Bewertung. " +
+    "Zu jedem Foto wird auch dessen Dateiname genannt - nutze ihn als ZUSAETZLICHEN Hinweis (Dateinamen enthalten oft die Raumart, z.B. \"Kueche_01.jpg\" oder \"Bad_EG.png\"), aber der tatsaechliche Bildinhalt hat immer Vorrang, falls Dateiname und Bildinhalt sich widersprechen oder der Dateiname generisch ist (z.B. \"IMG_0042.jpg\"). " +
     "Antworte ausschliesslich ueber das Werkzeug \"photo_sections\" mit GENAU einem Eintrag pro uebergebenem Foto, in derselben Reihenfolge.";
+
+  const content: (ImageBlock | { type: "text"; text: string })[] = [];
+  validIndices.forEach((origIdx, i) => {
+    const name = chunk[origIdx]?.name;
+    content.push({ type: "text", text: `Foto ${i + 1}, Dateiname: "${name || "unbekannt"}":` });
+    content.push(imageBlocks[i]);
+  });
+  content.push({
+    type: "text",
+    text: `Hier sind ${imageBlocks.length} Foto(s) mit Dateinamen. Ordne jedes Foto einem Abschnitt zu.`,
+  });
 
   const data = await callAnthropic(api, {
     model: api.model,
@@ -1120,13 +1140,7 @@ async function analyzePhotoSectionsChunk(
     messages: [
       {
         role: "user",
-        content: [
-          ...imageBlocks,
-          {
-            type: "text",
-            text: `Hier sind ${imageBlocks.length} Foto(s). Ordne jedes Foto einem Abschnitt zu.`,
-          },
-        ],
+        content,
       },
     ],
   });
@@ -1154,7 +1168,7 @@ async function analyzePhotoSectionsChunk(
 
 export async function analyzePhotoSections(
   api: ApiSettings,
-  photos: string[],
+  photos: PhotoInput[],
   sections: ExposeSection[],
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ ok: true; photos: PhotoAssignment[] } | AiError> {
