@@ -98,10 +98,13 @@ export type BoilerplateKind =
 
 export interface BoilerplatePage extends CapturedImagePage {
   kind: BoilerplateKind;
-  // Wortgetreu aus der PDF-Textebene extrahierter Seitentext (Zeilenumbrueche
-  // erhalten) - Grundlage fuer den Neuaufbau der Standardseiten im "KI
-  // Exposé"-Design (siehe luxuryTemplate.ts/buildBoilerplateLuxuryPages).
-  // Optional, da nur bei PDF-Quellen mit echter Textebene vorhanden.
+  // Wortgetreuer Seitentext (Zeilenumbrueche erhalten) - Grundlage fuer den
+  // Neuaufbau der Standardseiten im "KI Exposé"-Design (siehe
+  // luxuryTemplate.ts/buildBoilerplateLuxuryPages). Stammt entweder aus der
+  // echten PDF-Textebene, oder - falls die Seite als flaches Bild ohne
+  // Textebene eingebettet war - aus einer KI-Bildtranskription (siehe
+  // transcribeBoilerplateText() in lib/ai.ts, aufgerufen in DataPage.tsx).
+  // Optional, da beides fehlschlagen kann (z.B. kein API-Key vorhanden).
   text?: string;
 }
 

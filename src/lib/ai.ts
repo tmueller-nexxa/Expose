@@ -993,6 +993,115 @@ export async function analyzeKontaktPhotos(
   }
 }
 
+// --- Standardseiten-Text per KI transkribieren (Fallback ohne PDF-Textebene) --
+//
+// renderPdfPages() (lib/pdf.ts) liest Text NUR aus der echten PDF-Textebene
+// (page.getTextContent()) - ist eine Standardseite (Vorwort/Impressum/AGB/
+// Widerruf/Ansprechpartner) als flaches Bild ins PDF eingebettet (z.B. ein
+// aus einem Layout-Programm als Grafik exportierter Seitendruck, ohne
+// selektierbaren Text), liefert das eine leere Zeichenkette. Ohne jeden Text
+// faellt die Standardseiten-Neugestaltung (buildBoilerplateLuxuryPages)
+// mangels Inhalt komplett auf die alte 1:1-Bilduebernahme zurueck - genau
+// der Fall, den der Nutzer NICHT will (keine Grafiken/Farben aus der
+// Vorlage). Fuer genau diesen Fall: den sichtbaren Text per KI-Bildanalyse
+// wortgetreu transkribieren (funktioniert wie OCR), damit auch gescannte/
+// flach gerenderte Standardseiten im neuen Design mit echtem Text statt als
+// Rasterbild erscheinen.
+
+const BOILERPLATE_OCR_TOOL = {
+  name: "boilerplate_text",
+  description:
+    "Transkribiert den vollstaendigen sichtbaren Fliesstext einer Exposé-Standardseite (Vorwort/Impressum/AGB/Widerrufsbelehrung/Ansprechpartner) wortgetreu.",
+  input_schema: {
+    type: "object",
+    properties: {
+      pages: {
+        type: "array",
+        description: "Ergebnis in EXAKT der Reihenfolge der uebergebenen Seitenbilder, eines pro Bild.",
+        items: {
+          type: "object",
+          properties: {
+            text: {
+              type: "string",
+              description:
+                "Der komplette sichtbare Fliesstext der Seite, wortgetreu (Buchstabe fuer Buchstabe wie im Bild), mit Zeilenumbruechen zwischen Absaetzen/Aufzaehlungspunkten. Leer, falls kein lesbarer Text erkennbar ist.",
+            },
+          },
+          required: ["text"],
+        },
+      },
+    },
+    required: ["pages"],
+  },
+};
+
+// Transkribiert (OCR-artig) den sichtbaren Text von Standardseiten-Bildern -
+// nur fuer Seiten aufrufen, deren PDF-Textebene leer/zu kurz war (siehe
+// oben). Liefert bei jedem Fehler einfach leere Strings zurueck, statt die
+// gesamte Ingestion fehlschlagen zu lassen.
+export async function transcribeBoilerplateText(
+  api: ApiSettings,
+  pageImages: string[],
+): Promise<string[]> {
+  const empty = pageImages.map(() => "");
+  if (!aiReady(api) || pageImages.length === 0) return empty;
+
+  try {
+    const { blocks: imageBlocks, validIndices } = await buildImageBlocks(pageImages);
+    if (imageBlocks.length === 0) return empty;
+
+    const system =
+      "Du transkribierst den GESAMTEN sichtbaren Fliesstext einer eingescannten/als Bild gerenderten Exposé-Standardseite (Vorwort, Impressum, AGB, Widerrufsbelehrung oder Ansprechpartner-Kontaktdaten) wortgetreu und vollstaendig. " +
+      "Dies ist teils rechtlich bindender Text (Impressum/AGB/Widerrufsbelehrung) - absolute Wortgetreue ist PFLICHT: keine Zusammenfassung, keine Umformulierung, keine Auslassungen, keine Korrekturen. " +
+      "Ignoriere NUR reine Grafikelemente ohne Textbezug (Logos, Fotos, Dekorlinien/-flaechen) sowie eine isolierte Seitenzahl. " +
+      "Erhalte die Absatz-/Zeilenstruktur (Zeilenumbruch nach jedem Absatz/Aufzaehlungspunkt/nummerierten Abschnitt). " +
+      "Ist auf einer Seite kein lesbarer Text erkennbar, liefere einen leeren String. " +
+      "Antworte ausschliesslich ueber das Werkzeug \"boilerplate_text\" mit GENAU einem Eintrag pro uebergebenem Seitenbild, in derselben Reihenfolge.";
+
+    let data;
+    let lastErr: unknown = null;
+    for (let attempt = 1; attempt <= 2 && !data; attempt++) {
+      try {
+        data = await callAnthropic(api, {
+          model: api.model,
+          max_tokens: 4096,
+          system,
+          tools: [BOILERPLATE_OCR_TOOL],
+          tool_choice: { type: "tool", name: "boilerplate_text" },
+          messages: [
+            {
+              role: "user",
+              content: [
+                ...imageBlocks,
+                {
+                  type: "text",
+                  text: `Hier sind ${imageBlocks.length} Standardseite(n). Transkribiere jeweils den vollstaendigen sichtbaren Text wortgetreu.`,
+                },
+              ],
+            },
+          ],
+        });
+      } catch (e) {
+        lastErr = e;
+        if (attempt < 2) await sleep(800 * attempt);
+      }
+    }
+    if (!data) throw lastErr ?? new Error("unbekannt");
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as { pages?: { text?: string }[] } | undefined;
+    const raw = input?.pages ?? [];
+
+    const result = pageImages.map(() => "");
+    validIndices.forEach((origIdx, i) => {
+      result[origIdx] = String(raw[i]?.text ?? "").trim();
+    });
+    return result;
+  } catch {
+    return empty;
+  }
+}
+
 // --- "KI Exposé": Seitenaufbau aus Beispielen ableiten -------------------
 //
 // Anders als die Vektor-Grafik-Nachbildung (oben) wird hier NUR der grobe,

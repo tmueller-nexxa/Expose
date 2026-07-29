@@ -18,6 +18,7 @@ import {
   MAX_ANALYZE_PAGES,
   MODEL_OPTIONS,
   testApiKey,
+  transcribeBoilerplateText,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
 import { fitTextBoxHeight } from "../editor/fit";
@@ -308,6 +309,30 @@ export function DataPage() {
             }
             setProgress({ phase: "boiler", done: i + 1, total: needPhotos.length });
           }
+        }
+      }
+
+      // Fehlt einer Standardseite die Textebene (z.B. weil sie als flaches
+      // Bild ins PDF eingebettet wurde statt als echter Text), kann die
+      // spaetere Neugestaltung im "KI Exposé"-Design (buildBoilerplateSection
+      // in KiExposePage.tsx) mangels Text nicht greifen und faellt komplett
+      // auf die alte 1:1-Bilduebernahme zurueck. Fuer genau diese Seiten den
+      // Text per KI-Bildanalyse nachtraeglich transkribieren (OCR-artig).
+      const MIN_BOILERPLATE_TEXT_LEN = 20;
+      const needOcr = boilerPages.filter((b) => (b.text ?? "").trim().length < MIN_BOILERPLATE_TEXT_LEN);
+      if (needOcr.length > 0 && aiReady(data.api)) {
+        setProgress({ phase: "boiler", done: 0, total: needOcr.length });
+        try {
+          const texts = await transcribeBoilerplateText(
+            data.api,
+            needOcr.map((b) => pages[b.order]?.image ?? b.image),
+          );
+          for (let i = 0; i < needOcr.length; i++) {
+            if (texts[i]) needOcr[i].text = texts[i];
+            setProgress({ phase: "boiler", done: i + 1, total: needOcr.length });
+          }
+        } catch {
+          /* Transkription fehlgeschlagen - Seite behaelt ggf. leeren Text, faellt dann auf die alte 1:1-Bilduebernahme zurueck. */
         }
       }
 
