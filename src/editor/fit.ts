@@ -13,6 +13,32 @@ function measureCtx(): CanvasRenderingContext2D {
   return ctx as CanvasRenderingContext2D;
 }
 
+function wrapParagraphLines(
+  paragraph: string,
+  fontPx: number,
+  weight: number,
+  maxWidth: number,
+  fontFamily = "Inter, system-ui, sans-serif",
+): string[] {
+  const c = measureCtx();
+  c.font = `${weight} ${fontPx}px ${fontFamily}`;
+  const words = paragraph.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (c.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 function wrapLines(
   text: string,
   fontPx: number,
@@ -20,28 +46,67 @@ function wrapLines(
   maxWidth: number,
   fontFamily = "Inter, system-ui, sans-serif",
 ): number {
-  const c = measureCtx();
-  c.font = `${weight} ${fontPx}px ${fontFamily}`;
   let lines = 0;
   for (const paragraph of text.split("\n")) {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
-      lines += 1;
-      continue;
-    }
-    let line = "";
-    for (const word of words) {
-      const test = line ? `${line} ${word}` : word;
-      if (c.measureText(test).width > maxWidth && line) {
-        lines += 1;
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines += 1;
+    lines += wrapParagraphLines(paragraph, fontPx, weight, maxWidth, fontFamily).length;
   }
   return lines;
+}
+
+// Teilt einen (langen) Text moeglichst an Absatzgrenzen in einen Teil, der
+// in maxLines Zeilen passt, und einen Rest fuer eine Folgeseite - fuer die
+// Pagination langer Rechtstexte (AGB/Widerrufsbelehrung) im neuen Design,
+// die nicht durch Schriftverkleinerung allein lesbar auf eine Seite passen.
+export function splitTextToFitLines(
+  text: string,
+  fontPx: number,
+  weight: number,
+  maxWidth: number,
+  maxLines: number,
+  fontFamily?: string,
+): { fits: string; rest: string } {
+  const paragraphs = text.split("\n");
+  let usedLines = 0;
+  let cut = paragraphs.length;
+  for (let i = 0; i < paragraphs.length; i++) {
+    const pLines = wrapParagraphLines(paragraphs[i], fontPx, weight, maxWidth, fontFamily).length;
+    if (usedLines + pLines > maxLines) {
+      cut = i;
+      break;
+    }
+    usedLines += pLines;
+  }
+  if (cut > 0) {
+    return {
+      fits: paragraphs.slice(0, cut).join("\n"),
+      rest: paragraphs.slice(cut).join("\n"),
+    };
+  }
+  // Der allererste Absatz ist bereits laenger als maxLines - auf Wortebene
+  // aufteilen, statt eine leere Seite zu erzeugen.
+  const c = measureCtx();
+  c.font = `${weight} ${fontPx}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
+  const words = paragraphs[0].split(/\s+/).filter(Boolean);
+  let line = "";
+  let lines = 0;
+  let wordCut = words.length;
+  for (let i = 0; i < words.length; i++) {
+    const test = line ? `${line} ${words[i]}` : words[i];
+    if (c.measureText(test).width > maxWidth && line) {
+      lines += 1;
+      line = words[i];
+      if (lines >= maxLines) {
+        wordCut = i;
+        break;
+      }
+    } else {
+      line = test;
+    }
+  }
+  const fitsWords = words.slice(0, wordCut).join(" ");
+  const restWords = words.slice(wordCut).join(" ");
+  const restParagraphs = [restWords, ...paragraphs.slice(1)].filter((p) => p.length > 0);
+  return { fits: fitsWords, rest: restParagraphs.join("\n") };
 }
 
 export function fitFontSize(

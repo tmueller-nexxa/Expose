@@ -7,6 +7,7 @@
 // Page/PageElement-Objekte gebaut.
 
 import type {
+  BoilerplateKind,
   ExposeSection,
   ExposeType,
   LogoElement,
@@ -15,7 +16,7 @@ import type {
   StoredFile,
 } from "./types";
 import { uid } from "./util";
-import { fitTextBoxHeight } from "../editor/fit";
+import { fitTextBoxHeight, splitTextToFitLines } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import {
   EXPOSE_CREAM as CREAM,
@@ -275,6 +276,15 @@ function pageNumberMark(n: number): PageElement[] {
     radius: 8,
   };
   return [boxEl, textEl];
+}
+
+// Seitenzahl unten rechts auf JEDER Seite der uebergebenen Liste, fortlaufend
+// 1..N - wird vom Aufrufer EINMAL auf die vollstaendige, zusammengesetzte
+// Seitenliste angewendet (Inhaltsseiten + Standardseiten), damit die
+// Nummerierung ueber die gesamte Ausgabe hinweg fortlaufend bleibt, egal aus
+// wie vielen buildXPages()-Aufrufen sich die Liste zusammensetzt.
+export function addPageNumbers(pages: Page[]): void {
+  pages.forEach((p, i) => p.elements.push(...pageNumberMark(i + 1)));
 }
 
 function image(x: number, y: number, w: number, h: number, src: string): PageElement {
@@ -614,6 +624,174 @@ function documentPage(title: string, img: string): Page {
   return page(title, WHITE, els);
 }
 
+// --- Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner) im
+// neuen Design ----------------------------------------------------------
+//
+// Diese Seiten werden NICHT mehr 1:1 als Bild der Originalvorlage
+// uebernommen, sondern aus dem wortgetreu aus der PDF-Textebene
+// extrahierten Text neu im "KI Exposé"-Design gebaut (siehe
+// BoilerplatePage.text, Extraktion in lib/pdf.ts). Der rechtssichere
+// Wortlaut bleibt dabei exakt erhalten, nur Schrift/Farben/Layout wechseln
+// auf das neue Design.
+
+const LEGAL_FONT_SIZE = 12;
+const LEGAL_LINE_HEIGHT = 1.5;
+
+// Baut aus einem (ggf. langen) Rechtstext so viele Seiten wie noetig -
+// Schriftverkleinerung allein reicht bei mehrseitigen AGB/Widerrufs-
+// belehrungen nicht aus, ohne unleserlich zu werden, darum echte
+// Pagination statt Schrumpfen (siehe splitTextToFitLines()).
+function legalTextPages(title: string, text: string): Page[] {
+  const result: Page[] = [];
+  let remaining = text.trim();
+  let part = 1;
+  const bodyTop = 0.2;
+  const bodyWpx = CONTENT_W * REF_W;
+  while (remaining) {
+    const pageTitle = part === 1 ? title : `${title} (Fortsetzung)`;
+    const els: PageElement[] = [];
+    const headingEl = heading(pageTitle, MARGIN, 0.09, CONTENT_W, 0.07, {
+      fontSize: Math.round(22 * SCRIPT_SCALE),
+      maxH: 0.11,
+    });
+    const maxLines = Math.max(
+      4,
+      Math.floor(((CONTENT_BOTTOM - bodyTop) * REF_H) / (LEGAL_FONT_SIZE * LEGAL_LINE_HEIGHT)),
+    );
+    const { fits, rest } = splitTextToFitLines(
+      remaining,
+      LEGAL_FONT_SIZE,
+      400,
+      bodyWpx,
+      maxLines,
+      undefined,
+    );
+    const bodyEl: PageElement = {
+      id: uid("el"),
+      kind: "text",
+      x: MARGIN,
+      y: bodyTop,
+      w: CONTENT_W,
+      h: fitTextBoxHeight(fits, CONTENT_W, LEGAL_FONT_SIZE, 400) || 0.02,
+      z: z++,
+      text: fits,
+      fontSize: LEGAL_FONT_SIZE,
+      align: "left",
+      color: MUTED,
+      background: "rgba(0,0,0,0)",
+      fontWeight: 400,
+    };
+    els.push(textPanel(headingEl, CREAM));
+    els.push(textPanel(bodyEl, GREY));
+    els.push(rule(MARGIN, 0.075, 0.1));
+    els.push(headingEl);
+    els.push(bodyEl);
+    result.push(page(pageTitle, WHITE, els));
+    remaining = rest.trim();
+    part += 1;
+    // Sicherheitsnetz gegen eine Endlosschleife, falls splitTextToFitLines
+    // bei extrem ungewoehnlichem Text (z.B. ein einzelnes, nicht umbrechbares
+    // sehr langes "Wort") keinen Fortschritt mehr macht.
+    if (part > 30) break;
+  }
+  return result;
+}
+
+// Ansprechpartner-Seite: Text (Name/Kontaktdaten/kurzer Absatz) wortgetreu
+// aus der Vorlage uebernommen, dazu bis zu zwei aus der Originalseite
+// herausgeloeste Fotos (Makler-Portrait + ein weiteres, z.B. Guetesiegel/
+// Auszeichnung) sowie das Makler-Logo unten links - im neuen Design.
+function ansprechpartnerPage(
+  text: string,
+  images: string[],
+  logo: StoredFile | null,
+): Page {
+  const els: PageElement[] = [];
+  const headingEl = heading("Ihr Ansprechpartner", MARGIN, 0.09, CONTENT_W, 0.09, {
+    fontSize: Math.round(27 * SCRIPT_SCALE),
+    maxH: 0.14,
+  });
+  const textTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
+  const textW = images.length > 0 ? 0.42 : CONTENT_W;
+  const bodyEl = body(text, MARGIN, textTop, textW, Math.max(0.15, CONTENT_BOTTOM - textTop), {
+    maxH: CONTENT_BOTTOM - textTop,
+  });
+
+  els.push(textPanel(headingEl, CREAM));
+  els.push(textPanel(bodyEl, GREY));
+  els.push(rule(MARGIN, 0.075, 0.1));
+  els.push(headingEl);
+  els.push(bodyEl);
+
+  // Fotos rechts daneben - erstes (groesstes/erstes gefundenes) Bild
+  // prominent, ein zweites kleiner darunter.
+  if (images.length > 0) {
+    const photoX = 1 - MARGIN - 0.38;
+    if (images.length === 1) {
+      els.push(image(photoX, textTop, 0.38, CONTENT_BOTTOM - textTop, images[0]));
+    } else {
+      const bigH = (CONTENT_BOTTOM - textTop) * 0.62;
+      els.push(image(photoX, textTop, 0.38, bigH, images[0]));
+      els.push(image(photoX, textTop + bigH + 0.02, 0.38, CONTENT_BOTTOM - textTop - bigH - 0.02, images[1]));
+    }
+  }
+
+  // Logo unten links (wie in der Originalvorlage), klein/dezent.
+  if (logo) {
+    const lw = 0.22;
+    const lh = lw * 0.32;
+    els.push({ id: uid("el"), kind: "logo", x: MARGIN, y: 1 - MARGIN - lh, w: lw, h: lh, z: z++, src: logo.dataUrl });
+  }
+
+  return page("Ansprechpartner", CREAM, els);
+}
+
+const BOILERPLATE_ORDER: BoilerplateKind[] = ["vorwort", "impressum", "agb", "widerruf", "kontakt"];
+
+const BOILERPLATE_TITLE: Record<BoilerplateKind, string> = {
+  vorwort: "Vorwort",
+  impressum: "Impressum",
+  agb: "Allgemeine Geschäftsbedingungen",
+  widerruf: "Widerrufsbelehrung",
+  kontakt: "Ansprechpartner",
+};
+
+export interface BoilerplateLuxuryInput {
+  kind: BoilerplateKind;
+  // Kompletter, ueber alle Quellseiten dieser Art zusammengefuegter Text.
+  text: string;
+}
+
+// Baut die Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner)
+// im neuen "KI Exposé"-Design aus dem wortgetreu extrahierten Text -
+// Ersatz fuer die bisherige 1:1-Bilduebernahme (siehe templates.ts/
+// boilerplatePages(), die fuer den klassischen Editor-Ablauf unveraendert
+// weiterverwendet wird). Nur die Ansprechpartner-Seite bekommt zusaetzlich
+// die aus der Originalseite herausgeloesten Fotos + das Logo.
+export function buildBoilerplateLuxuryPages(
+  inputs: BoilerplateLuxuryInput[],
+  kontaktImages: string[],
+  logo: StoredFile | null,
+): Page[] {
+  const byKind = new Map<BoilerplateKind, string>();
+  for (const inp of inputs) {
+    const prev = byKind.get(inp.kind);
+    byKind.set(inp.kind, prev ? `${prev}\n\n${inp.text}` : inp.text);
+  }
+  const result: Page[] = [];
+  for (const kind of BOILERPLATE_ORDER) {
+    const text = byKind.get(kind)?.trim();
+    if (!text) continue;
+    if (kind === "kontakt") {
+      result.push({ ...ansprechpartnerPage(text, kontaktImages, logo), title: BOILERPLATE_TITLE[kind] });
+    } else {
+      const built = legalTextPages(BOILERPLATE_TITLE[kind], text);
+      built.forEach((p) => result.push({ ...p, title: BOILERPLATE_TITLE[kind] }));
+    }
+  }
+  return result;
+}
+
 // --- Zusammenbau -------------------------------------------------------------
 
 // Erkennt den "Eckdaten"-Abschnitt am Titel (unabhaengig von der erkannten
@@ -717,9 +895,6 @@ export function buildLuxuryPages(
     const chunk = overflowPhotos.slice(i, i + 4);
     pages.push(galeriePage(i === 0 ? "Weitere Impressionen" : "Impressionen", chunk));
   }
-
-  // Seitenzahl unten rechts auf JEDER erzeugten Seite (siehe pageNumberMark()).
-  pages.forEach((p, i) => p.elements.push(...pageNumberMark(i + 1)));
 
   return pages;
 }

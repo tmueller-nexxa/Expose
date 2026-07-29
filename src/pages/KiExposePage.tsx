@@ -5,13 +5,16 @@ import { Dropzone } from "../components/Dropzone";
 import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
+  type ApiSettings,
   type ExposeSection,
   type ExposeType,
+  type StoredBoilerplate,
   type StoredFile,
 } from "../lib/types";
 import {
   aiReady,
   analyzeExposeStructure,
+  analyzePagesDesign,
   analyzePhotoSections,
   MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
@@ -20,8 +23,14 @@ import {
 import { aiProxyUrl } from "../firebase.config";
 import { detectBoilerplate } from "../lib/boilerplate";
 import { boilerplatePages } from "../lib/templates";
-import { buildLuxuryPages, type KiExposeSectionInput } from "../lib/luxuryTemplate";
-import { colorDistance, computeImageSignature, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
+import {
+  addPageNumbers,
+  buildBoilerplateLuxuryPages,
+  buildLuxuryPages,
+  type BoilerplateLuxuryInput,
+  type KiExposeSectionInput,
+} from "../lib/luxuryTemplate";
+import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { saveProjectNow } from "../lib/storage";
 import { fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { renderPdfPages } from "../lib/pdf";
@@ -49,6 +58,55 @@ const TYPE_LABEL: Record<ExposeType, string> = {
   mehrfamilienhaus: "Mehrfamilienhaus",
   gewerbe: "Gewerbeimmobilie",
 };
+
+// Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner) im neuen
+// "KI Exposé"-Design statt der bisherigen 1:1-Bilduebernahme (siehe
+// buildBoilerplateLuxuryPages() in luxuryTemplate.ts) - NUR fuer diesen
+// Ablauf, der klassische Editor-Ablauf nutzt weiterhin boilerplatePages()
+// unveraendert. Faellt auf die alte Bilduebernahme zurueck, falls fuer
+// KEINE der Seiten Text vorliegt (z.B. eine vor dieser Funktion
+// hochgeladene Vorlage ohne gespeicherten Text, oder eine Quelle ohne
+// PDF-Textebene).
+async function buildBoilerplateSection(
+  api: ApiSettings,
+  boilerplate: StoredBoilerplate | null,
+  logo: StoredFile | null,
+) {
+  if (!boilerplate || boilerplate.pages.length === 0) return [];
+  const hasAnyText = boilerplate.pages.some((p) => p.text?.trim());
+  if (!hasAnyText) return boilerplatePages(boilerplate);
+
+  const inputs: BoilerplateLuxuryInput[] = boilerplate.pages
+    .filter((p) => p.text?.trim())
+    .map((p) => ({ kind: p.kind, text: p.text ?? "" }));
+
+  // Fotos der Ansprechpartner-Seite (Makler-Portrait, ggf. ein weiteres
+  // Bild wie ein Guetesiegel) aus der Originalseite herausloesen - die
+  // Seite wird nicht mehr als Bild uebernommen, darum muessen die Fotos
+  // einzeln als eigene Bild-Elemente weiterleben. Das Logo kommt direkt
+  // aus dem Datenbereich (data.logo), nicht aus der Seite herausgeschnitten.
+  const kontaktPages = boilerplate.pages.filter((p) => p.kind === "kontakt");
+  const kontaktImages: string[] = [];
+  if (kontaktPages.length > 0 && aiReady(api)) {
+    try {
+      const res = await analyzePagesDesign(api, kontaktPages.map((p) => p.image));
+      if (res.ok) {
+        for (let i = 0; i < kontaktPages.length; i++) {
+          const blocks = (res.pages[i]?.blocks ?? []).filter((b) => b.type === "image");
+          for (const b of blocks.slice(0, 2 - kontaktImages.length)) {
+            const cropped = await cropRegionFromImage(kontaktPages[i].image, b);
+            kontaktImages.push(cropped);
+          }
+          if (kontaktImages.length >= 2) break;
+        }
+      }
+    } catch {
+      /* Fotoerkennung fehlgeschlagen - Seite bekommt dann kein Foto, Text bleibt trotzdem erhalten. */
+    }
+  }
+
+  return buildBoilerplateLuxuryPages(inputs, kontaktImages, logo);
+}
 
 type Phase = "struktur" | "fotos" | "texte" | "aufbau";
 
@@ -358,12 +416,15 @@ export function KiExposePage() {
         ? { ...data.logo, mime: "image/png", dataUrl: await invertLogoToWhite(data.logo.dataUrl) }
         : null;
       const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo, energieausweisImage);
+      const boilerplateSection = await buildBoilerplateSection(data.api, data.boilerplate, data.logo);
+      const allPages = [...pages, ...boilerplateSection];
+      addPageNumbers(allPages);
 
       const project: ExposeProject = {
         id: uid("proj"),
         type: activeType,
         title: `${TYPE_LABEL[activeType]} – Exposé`,
-        pages: [...pages, ...boilerplatePages(data.boilerplate)],
+        pages: allPages,
         updatedAt: Date.now(),
         builtFrom: `ki-expose:${Date.now()}`,
       };

@@ -145,6 +145,28 @@ export async function eraseRegionsFromImage(
   }
 }
 
+// Schneidet einen Bereich (Anteile 0..1) aus einer Seiten-Rastergrafik als
+// eigenstaendiges Bild aus - Gegenstueck zu eraseRegionsFromImage(): dort
+// wird ein Bereich entfernt, hier wird er stattdessen als eigenes Bild
+// erhalten (z.B. um ein Makler-Foto/Logo aus einer 1:1 uebernommenen
+// Standardseite fuer die Weiterverwendung im neuen Design herauszuloesen).
+export async function cropRegionFromImage(imageDataUrl: string, rect: Rect): Promise<string> {
+  const img = await loadImage(imageDataUrl);
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const px = Math.max(0, Math.round(rect.x * srcW));
+  const py = Math.max(0, Math.round(rect.y * srcH));
+  const pw = Math.max(1, Math.round(rect.w * srcW));
+  const ph = Math.max(1, Math.round(rect.h * srcH));
+  const canvas = document.createElement("canvas");
+  canvas.width = pw;
+  canvas.height = ph;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return imageDataUrl;
+  ctx.drawImage(img, px, py, pw, ph, 0, 0, pw, ph);
+  return canvas.toDataURL("image/png");
+}
+
 // Wahrnehmungs-Hash (average hash, 8x8 Graustufen-Raster) fuer Fotos -
 // erkennt auch NICHT byte-identische, aber visuell (nahezu) gleiche Fotos
 // als Duplikate. Ein reiner String-Vergleich der DataURL faengt nur exakt

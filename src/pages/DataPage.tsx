@@ -161,6 +161,7 @@ export function DataPage() {
             title: BOILERPLATE_TITLES[kind],
             image: p.image,
             order: i,
+            text: p.text,
           });
         } else if (p.image) {
           contentPages.push({ order: i, image: p.image });

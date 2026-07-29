@@ -104,14 +104,41 @@ export async function renderPdfPages(
     for (let i = 1; i <= count; i++) {
       const page = await pdf.getPage(i);
 
-      // Text extrahieren.
+      // Text extrahieren - zeilenweise (nicht alles zu einem Textklumpen
+      // zusammengefasst), damit Absaetze/nummerierte Abschnitte (wichtig bei
+      // AGB/Widerrufsbelehrung) erhalten bleiben. Ein Sprung der Y-Position
+      // zwischen zwei Textfragmenten (oder pdf.js' eigenes hasEOL-Flag)
+      // markiert einen Zeilenumbruch.
       let text = "";
       try {
         const tc = await page.getTextContent();
-        text = tc.items
-          .map((it) => ("str" in it ? (it as { str: string }).str : ""))
-          .join(" ")
-          .replace(/\s+/g, " ")
+        const lines: string[] = [];
+        let currentLine = "";
+        let lastY: number | null = null;
+        for (const raw of tc.items) {
+          if (!("str" in raw)) continue;
+          const it = raw as { str: string; transform?: number[]; hasEOL?: boolean };
+          const y = it.transform?.[5] ?? 0;
+          if (lastY !== null && Math.abs(y - lastY) > 2 && currentLine) {
+            lines.push(currentLine.trim());
+            currentLine = "";
+          }
+          if (it.str) {
+            currentLine += currentLine && !currentLine.endsWith(" ") && !it.str.startsWith(" ") ? ` ${it.str}` : it.str;
+          }
+          lastY = y;
+          if (it.hasEOL) {
+            lines.push(currentLine.trim());
+            currentLine = "";
+            lastY = null;
+          }
+        }
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        text = lines
+          .filter(Boolean)
+          .join("\n")
+          .replace(/[ \t]+/g, " ")
+          .replace(/\n{3,}/g, "\n\n")
           .trim();
       } catch {
         /* ohne Textebene -> leer */
