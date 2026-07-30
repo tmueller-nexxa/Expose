@@ -235,12 +235,13 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
 }
 
 // Seitenzahl unten rechts, mit Abstand vom Rand (MARGIN), in der Schwung-
-// schrift, goldene Schriftfarbe auf einer eigenen Hintergrundbox - wird auf
-// JEDE erzeugte Seite gelegt (siehe Ende von buildLuxuryPages()). Nutzt
-// bewusst einen fest hohen z-Wert (nicht den laufenden Zaehler) statt der
-// normalen panel()/textPanel()-Helfer (die auf z:0 liegen) - so bleibt die
-// Seitenzahl auf JEDER Seite sichtbar obenauf, auch auf Seiten mit einem
-// grossflaechigen Foto, das sonst bis in die untere rechte Ecke reicht.
+// schrift, goldene Schriftfarbe, OHNE Hintergrundbox (frei ueber dem
+// Seiteninhalt) - wird auf JEDE erzeugte Seite gelegt (siehe Ende von
+// buildLuxuryPages()). Nutzt bewusst einen fest hohen z-Wert (nicht den
+// laufenden Zaehler) statt der normalen panel()/textPanel()-Helfer (die auf
+// z:0 liegen) - so bleibt die Seitenzahl auf JEDER Seite sichtbar obenauf,
+// auch auf Seiten mit einem grossflaechigen Foto, das sonst bis in die
+// untere rechte Ecke reicht.
 const PAGE_NUM_Z = 900;
 const PAGE_NUM_FONT_SIZE = 46;
 function pageNumberMark(n: number): PageElement[] {
@@ -255,7 +256,7 @@ function pageNumberMark(n: number): PageElement[] {
     y,
     w,
     h,
-    z: PAGE_NUM_Z + 1,
+    z: PAGE_NUM_Z,
     text: String(n),
     fontSize: PAGE_NUM_FONT_SIZE,
     align: "center",
@@ -263,19 +264,12 @@ function pageNumberMark(n: number): PageElement[] {
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
     fontFamily: SERIF,
+    // Ohne Hintergrundbox braucht die Zahl einen dezenten Schlagschatten,
+    // damit sie auch auf hellen Fotobereichen lesbar bleibt (analog
+    // exposeMark()/heroLogoBadge()).
+    textShadow: true,
   };
-  const boxEl: PageElement = {
-    id: uid("el"),
-    kind: "shape",
-    x: textEl.x - TEXT_PAD_X,
-    y: textEl.y - TEXT_PAD_Y,
-    w: textEl.w + TEXT_PAD_X * 2,
-    h: textEl.h + TEXT_PAD_Y * 2,
-    z: PAGE_NUM_Z,
-    color: WHITE,
-    radius: 8,
-  };
-  return [boxEl, textEl];
+  return [textEl];
 }
 
 // Seitenzahl unten rechts auf JEDER Seite der uebergebenen Liste, fortlaufend
