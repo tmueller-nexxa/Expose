@@ -116,6 +116,29 @@
   color: var(--brand);
   font-weight: 700;
 }
+/* Auswahlrahmen (Marquee): mit gedrueckter Maustaste ueber die leere Flaeche
+   gezogenes Rechteck, das beim Loslassen alle darin liegenden Elemente
+   auswaehlt. */
+.marquee-select {
+  position: absolute;
+  border: 1px solid var(--brand);
+  background: rgba(31, 111, 235, 0.12);
+  pointer-events: none;
+  z-index: 600;
+}
+/* Gruene Zentrier-Hilfslinie: erscheint waehrend des Verschiebens, sobald ein
+   Objekt horizontal genau auf der Seitenmitte liegt, und verschwindet
+   wieder, sobald man darueber hinausgezogen hat. */
+.center-guide-v {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  border-left: 1.5px solid #2ecc71;
+  pointer-events: none;
+  z-index: 700;
+}
 
 /* Elements */
 .el {

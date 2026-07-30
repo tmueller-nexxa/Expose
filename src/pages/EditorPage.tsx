@@ -52,6 +52,11 @@ function loadThumbRailWidth(): number {
   return THUMB_RAIL_DEFAULT;
 }
 
+// Stabile leere Auswahl fuer die nicht-interaktiven PageCanvas-Instanzen
+// (Miniaturansichten, Druckansicht) - vermeidet, bei jedem Render ein neues
+// Set anzulegen.
+const EMPTY_SELECTION = new Set<string>();
+
 // Hat der Nutzer bereits eigene Bilder platziert? (Standardseiten zaehlen nicht.)
 function hasPlacedImages(project: ExposeProject): boolean {
   return project.pages.some((pg) =>
@@ -74,7 +79,18 @@ export function EditorPage() {
   const [project, setProject] = useState<ExposeProject | null>(null);
   const projectRef = useRef<ExposeProject | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Mehrfachauswahl: per Auswahlrahmen (Marquee) oder Strg/Cmd+Klick koennen
+  // mehrere Elemente gleichzeitig ausgewaehlt sein. "selectedId" bleibt als
+  // abgeleiteter Wert erhalten (nur gesetzt, wenn GENAU EIN Element
+  // ausgewaehlt ist) - alle bisherigen, auf Einzelauswahl ausgelegten
+  // Stellen (Werkzeugleiste, Loeschen, Ebenen …) funktionieren dadurch
+  // unveraendert weiter und sind einfach inaktiv, solange 0 oder mehrere
+  // Elemente ausgewaehlt sind.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
+  function selectSingle(id: string | null) {
+    setSelectedIds(id ? new Set([id]) : new Set());
+  }
   const [editingId, setEditingId] = useState<string | null>(null);
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(
@@ -191,6 +207,24 @@ export function EditorPage() {
     [mutatePages],
   );
 
+  // Wie patchElement, aber fuer mehrere Elemente auf einmal (EIN gemeinsamer
+  // Commit statt N einzelner) - fuer den gemeinsamen Verschiebe-Vorgang einer
+  // Mehrfachauswahl (siehe PageCanvas.tsx/beginGroupDrag).
+  const patchElements = useCallback(
+    (patches: { id: string; patch: Partial<PageElement> }[]) => {
+      mutatePages((pages) =>
+        pages.map((pg) => ({
+          ...pg,
+          elements: pg.elements.map((e) => {
+            const p = patches.find((x) => x.id === e.id);
+            return p ? ({ ...e, ...p.patch } as PageElement) : e;
+          }),
+        })),
+      );
+    },
+    [mutatePages],
+  );
+
   // Wie patchElement, aber fuer Textfelder: bei laengerem Text (oder
   // groesserer Schrift) waechst zuerst die BREITE (bis zum Seitenrand),
   // NICHT die Hoehe - ein Textfeld soll bei mehr Inhalt primaer breiter
@@ -278,7 +312,7 @@ export function EditorPage() {
           elements: pg.elements.filter((e) => e.id !== elId || e.locked),
         })),
       );
-      setSelectedId(null);
+      selectSingle(null);
     },
     [mutatePages, pageIndex],
   );
@@ -381,7 +415,7 @@ export function EditorPage() {
       imgY: 0,
       z: IMAGE_Z,
     } as Partial<ImageElement>);
-    setSelectedId(elId);
+    selectSingle(elId);
   }
 
   async function dropFileToCanvas(xFrac: number, yFrac: number, file: File) {
@@ -407,7 +441,7 @@ export function EditorPage() {
         pg.id === pageId ? { ...pg, elements: [...pg.elements, newEl] } : pg,
       ),
     );
-    setSelectedId(newEl.id);
+    selectSingle(newEl.id);
   }
 
   function flash(msg: string, err = false) {
@@ -437,7 +471,7 @@ export function EditorPage() {
     }
     const newLen = cur.pages.length - 1;
     mutatePages((pages) => pages.filter((_, i) => i !== index));
-    setSelectedId(null);
+    selectSingle(null);
     setEditingId(null);
     setPageIndex((prev) => {
       if (prev > index) return prev - 1;
@@ -549,7 +583,7 @@ export function EditorPage() {
         pg.id === pageId ? { ...pg, elements: [...pg.elements, newEl] } : pg,
       ),
     );
-    setSelectedId(newEl.id);
+    selectSingle(newEl.id);
     setEditingId(null);
     flash("Platzhalter hinzugefügt – per Maus über das Foto ziehen und in der Größe anpassen.");
   }
@@ -581,7 +615,7 @@ export function EditorPage() {
         pg.id === pageId ? { ...pg, elements: [...pg.elements, newEl] } : pg,
       ),
     );
-    setSelectedId(newEl.id);
+    selectSingle(newEl.id);
     setEditingId(newEl.id);
     flash("Textfeld hinzugefügt – Text eingeben, per Maus verschieben und in der Größe anpassen.");
   }
@@ -761,7 +795,7 @@ export function EditorPage() {
       : createProject(exType, data.logo, data.boilerplate);
     commit(proj);
     setPageIndex(0);
-    setSelectedId(null);
+    selectSingle(null);
     setEditingId(null);
     setStructureUpdate(false);
     flash(
@@ -898,16 +932,36 @@ export function EditorPage() {
               page={page}
               width={canvasWidth}
               editable={!progress}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               editingId={editingId}
               analyzingIds={analyzingIds}
-              onSelect={(id) => {
-                setSelectedId(id);
+              onSelect={(id, additive) => {
+                if (id === null) {
+                  setSelectedIds(new Set());
+                  setEditingId(null);
+                  return;
+                }
+                if (additive) {
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                  setEditingId(null);
+                  return;
+                }
+                selectSingle(id);
                 if (id !== editingId) setEditingId(null);
               }}
+              onSelectMany={(ids) => {
+                setSelectedIds(new Set(ids));
+                setEditingId(null);
+              }}
               onChange={patchElement}
+              onChangeMultiple={patchElements}
               onStartEdit={(id) => {
-                setSelectedId(id);
+                selectSingle(id);
                 setEditingId(id);
                 // Beim Start von "Bild anpassen" sofort einen minimalen Zoom
                 // setzen, falls das Bild noch auf 1 (unveraendert) steht -
@@ -979,7 +1033,7 @@ export function EditorPage() {
               className={`thumb ${i === pageIndex ? "active" : ""}`}
               onClick={() => {
                 setPageIndex(i);
-                setSelectedId(null);
+                selectSingle(null);
                 setEditingId(null);
               }}
             >
@@ -988,11 +1042,13 @@ export function EditorPage() {
                   page={pg}
                   width={thumbRailWidth - THUMB_RAIL_PADDING}
                   editable={false}
-                  selectedId={null}
+                  selectedIds={EMPTY_SELECTION}
                   editingId={null}
                   analyzingIds={analyzingIds}
                   onSelect={() => {}}
+                  onSelectMany={() => {}}
                   onChange={() => {}}
+                  onChangeMultiple={() => {}}
                   onStartEdit={() => {}}
                   onCommitText={() => {}}
                   onDropFileToElement={() => {}}
@@ -1278,11 +1334,13 @@ function PrintView({ project }: { project: ExposeProject }) {
             page={pg}
             width={REF_W}
             editable={false}
-            selectedId={null}
+            selectedIds={EMPTY_SELECTION}
             editingId={null}
             analyzingIds={new Set()}
             onSelect={() => {}}
+            onSelectMany={() => {}}
             onChange={() => {}}
+            onChangeMultiple={() => {}}
             onStartEdit={() => {}}
             onCommitText={() => {}}
             onDropFileToElement={() => {}}

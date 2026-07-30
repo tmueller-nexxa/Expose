@@ -9,20 +9,18 @@ import type {
 import { clamp } from "../lib/util";
 import { startPointerDrag } from "./pointer";
 import { IconImage } from "../components/Icons";
-import { REF_H, REF_W } from "./constants";
+import { CENTER_SNAP_FRAC, snapX, snapY } from "./snap";
 
-// Unsichtbares Ausrichtungsraster: Verschieben/Skalieren rastet auf ein
-// 8px-Raster (bezogen auf die Referenzseitengroesse REF_W/REF_H) ein - ohne
-// sichtbare Rasterlinien, aber so laesst sich z.B. dieselbe Position/Breite
-// bei zwei verschiedenen Elementen leicht wieder treffen.
-const GRID_PX = 8;
-function snapX(fracX: number): number {
-  const step = GRID_PX / REF_W;
-  return Math.round(fracX / step) * step;
-}
-function snapY(fracY: number): number {
-  const step = GRID_PX / REF_H;
-  return Math.round(fracY / step) * step;
+// Snapt eine X-Position mit dem 8px-Raster - liegt die horizontale Mitte des
+// Elements dabei nahe genug an der Seitenmitte (CENTER_SNAP_FRAC), wird
+// stattdessen exakt zentriert und "centered" gemeldet (steuert die gruene
+// Zentrier-Hilfslinie, siehe PageCanvas.tsx).
+function snapCenterX(x: number, w: number): { x: number; centered: boolean } {
+  const center = x + w / 2;
+  if (Math.abs(center - 0.5) <= CENTER_SNAP_FRAC) {
+    return { x: 0.5 - w / 2, centered: true };
+  }
+  return { x: snapX(x), centered: false };
 }
 
 interface Props {
@@ -30,15 +28,30 @@ interface Props {
   scale: number;
   pageW: number;
   pageH: number;
+  // "selected": Element ist Teil der aktuellen (ggf. mehrfachen) Auswahl -
+  // steuert nur die visuelle Hervorhebung (Rahmen). "soloSelected": Element
+  // ist die EINZIGE aktuelle Auswahl - steuert zusaetzlich die Resize-
+  // Handles (Groesse mehrerer Elemente gleichzeitig zu aendern waere
+  // mehrdeutig, darum nur bei Einzelauswahl moeglich).
   selected: boolean;
+  soloSelected: boolean;
+  selectionCount: number;
   editable: boolean;
   analyzing: boolean;
   editingId: string | null;
-  onSelect: (id: string) => void;
+  // additive = Strg/Cmd war gedrueckt (Auswahl hinzufuegen/entfernen statt ersetzen).
+  onSelect: (id: string, additive: boolean) => void;
   onChange: (id: string, patch: Partial<PageElement>) => void;
   onStartEdit: (id: string) => void;
   onCommitText: (id: string, text: string) => void;
   onDropFile: (id: string, file: File) => void;
+  // Startet einen gemeinsamen Verschiebe-Vorgang fuer die GESAMTE aktuelle
+  // Mehrfachauswahl (wird nur aufgerufen, wenn dieses Element bereits Teil
+  // einer Mehrfachauswahl ist) - liefert eine Update-Funktion, die pro
+  // Pointer-Tick mit der kumulierten Verschiebung (Pixel) aufgerufen wird
+  // und zurueckmeldet, ob gerade zentriert wurde (fuer die Hilfslinie).
+  onBeginGroupDrag: (anchorId: string) => (dxPx: number, dyPx: number) => boolean;
+  onCenterGuide: (show: boolean) => void;
 }
 
 // Ecken UND Kanten - an jeder Seite laesst sich die Groesse per Ziehen aendern.
@@ -52,6 +65,8 @@ export function CanvasElement(props: Props) {
     pageW,
     pageH,
     selected,
+    soloSelected,
+    selectionCount,
     editable,
     analyzing,
     editingId,
@@ -60,6 +75,8 @@ export function CanvasElement(props: Props) {
     onStartEdit,
     onCommitText,
     onDropFile,
+    onBeginGroupDrag,
+    onCenterGuide,
   } = props;
 
   const [dropOver, setDropOver] = useState(false);
@@ -99,19 +116,56 @@ export function CanvasElement(props: Props) {
 
   function onBodyDown(e: React.PointerEvent) {
     if (!editable) return;
-    onSelect(el.id);
+    // Strg/Cmd+Klick: nur Auswahl umschalten (hinzufuegen/entfernen), kein
+    // gleichzeitiges Verschieben starten - Standardverhalten in Design-Tools.
+    if (e.ctrlKey || e.metaKey) {
+      e.stopPropagation();
+      onSelect(el.id, true);
+      return;
+    }
+    // War dieses Element bereits Teil einer Mehrfachauswahl, bleibt die
+    // GESAMTE Auswahl fuer einen moeglichen gemeinsamen Verschiebe-Vorgang
+    // erhalten - erst ein reiner Klick OHNE Ziehen (siehe unten) reduziert
+    // sie danach auf dieses eine Element. Andernfalls ersetzt der Klick die
+    // Auswahl sofort wie bisher.
+    const wasSelected = selected;
+    const groupMode = wasSelected && selectionCount > 1;
+    if (!wasSelected) onSelect(el.id, false);
     if (imgEditing) {
       onImagePanDown(e);
       return;
     }
     if (editing || el.locked) return;
+
+    if (groupMode) {
+      const update = onBeginGroupDrag(el.id);
+      let moved = false;
+      startPointerDrag(
+        e,
+        (dx, dy) => {
+          if (!moved && Math.hypot(dx, dy) > 2) moved = true;
+          onCenterGuide(update(dx, dy));
+        },
+        () => {
+          onCenterGuide(false);
+          if (!moved) onSelect(el.id, false);
+        },
+      );
+      return;
+    }
+
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
-    startPointerDrag(e, (dx, dy) => {
-      onChange(el.id, {
-        x: snapX(clamp(s.x + dx / pageW, 0, 1 - s.w)),
-        y: snapY(clamp(s.y + dy / pageH, 0, 1 - s.h)),
-      });
-    });
+    startPointerDrag(
+      e,
+      (dx, dy) => {
+        const rawX = clamp(s.x + dx / pageW, 0, 1 - s.w);
+        const rawY = snapY(clamp(s.y + dy / pageH, 0, 1 - s.h));
+        const { x: snappedX, centered } = snapCenterX(rawX, s.w);
+        onCenterGuide(centered);
+        onChange(el.id, { x: snappedX, y: rawY });
+      },
+      () => onCenterGuide(false),
+    );
   }
 
   // Verschiebt das Foto INNERHALB des Rahmens (Position/Zoom des Bildes),
@@ -146,7 +200,7 @@ export function CanvasElement(props: Props) {
   }
 
   function onHandleDown(e: React.PointerEvent, corner: HandlePos) {
-    onSelect(el.id);
+    onSelect(el.id, false);
     if (el.locked) return;
     const s = { x: el.x, y: el.y, w: el.w, h: el.h };
     startPointerDrag(e, (dx, dy) => {
@@ -180,7 +234,7 @@ export function CanvasElement(props: Props) {
     });
   }
 
-  const handles = selected && editable && !editing && !imgEditing && !el.locked && (
+  const handles = soloSelected && editable && !editing && !imgEditing && !el.locked && (
     <>
       {HANDLES.map((c) => (
         <div
