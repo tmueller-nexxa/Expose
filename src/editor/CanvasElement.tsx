@@ -10,6 +10,7 @@ import { clamp } from "../lib/util";
 import { startPointerDrag } from "./pointer";
 import { IconImage } from "../components/Icons";
 import { CENTER_SNAP_FRAC, snapX, snapY } from "./snap";
+import { TEXT_LINE_HEIGHT } from "./constants";
 
 // Snapt eine X-Position mit dem 8px-Raster - liegt die horizontale Mitte des
 // Elements dabei nahe genug an der Seitenmitte (CENTER_SNAP_FRAC), wird
@@ -371,7 +372,7 @@ export function CanvasElement(props: Props) {
             fontWeight: t.fontWeight,
             fontFamily: t.fontFamily,
             textAlign: t.align,
-            lineHeight: 1.35,
+            lineHeight: TEXT_LINE_HEIGHT,
           }}
           onBlur={() => onCommitText(el.id, editRef.current?.textContent ?? "")}
           onPointerDown={(e) => e.stopPropagation()}
@@ -386,7 +387,7 @@ export function CanvasElement(props: Props) {
             fontWeight: t.fontWeight,
             fontFamily: t.fontFamily,
             textAlign: t.align,
-            lineHeight: 1.35,
+            lineHeight: TEXT_LINE_HEIGHT,
           }}
         >
           {t.text}

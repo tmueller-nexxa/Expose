@@ -16,7 +16,11 @@ import type {
   StoredFile,
 } from "./types";
 import { uid } from "./util";
-import { fitTextBoxHeight, fitTextBoxWidth, splitTextToFitLines } from "../editor/fit";
+import {
+  fitTextBoxHeight,
+  splitTextToFitLines,
+  textBaselineOffsetFrac,
+} from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import {
   EXPOSE_CREAM as CREAM,
@@ -234,29 +238,45 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
   };
 }
 
-// Seitenzahl unten rechts, mit Abstand vom Rand (MARGIN), in der Schwung-
-// schrift, goldene Schriftfarbe, OHNE Hintergrundbox (frei ueber dem
-// Seiteninhalt) - wird auf JEDE erzeugte Seite gelegt (siehe Ende von
+// Seitenzahl unten rechts in der Ecke, in der Schwungschrift, goldene
+// Schriftfarbe, OHNE Hintergrundbox und ohne Schatten (frei auf dem
+// Seitenhintergrund) - wird auf JEDE erzeugte Seite gelegt (siehe Ende von
 // buildLuxuryPages()). Nutzt bewusst einen fest hohen z-Wert (nicht den
 // laufenden Zaehler) statt der normalen panel()/textPanel()-Helfer (die auf
 // z:0 liegen) - so bleibt die Seitenzahl auf JEDER Seite sichtbar obenauf,
 // auch auf Seiten mit einem grossflaechigen Foto, das sonst bis in die
 // untere rechte Ecke reicht.
+//
+// Die beiden Abstaende sind aus der Referenzseite des Nutzers (Seite 22,
+// A4 = 594,96 x 841,92 pt) ausgemessen - NICHT der Inhaltsrand MARGIN (0,09),
+// der fuer die Seitenzahl viel zu gross ist und sie deutlich vor der Ecke
+// absetzt (genau der zuvor gemeldete Fehler):
+//   - rechte Textkante: 29,89 pt vor dem rechten Blattrand -> 29,89/594,96
+//   - Schrift-GRUNDLINIE: 30,42 pt ueber dem unteren Blattrand -> 30,42/841,92
+// Beide Werte beziehen sich auf die Schrift selbst (Textkante/Grundlinie),
+// nicht auf die umgebende Box - die Box wird darum unten aus diesen Werten
+// zurueckgerechnet.
 const PAGE_NUM_Z = 900;
 const PAGE_NUM_FONT_SIZE = 46;
+const PAGE_NUM_EDGE_RIGHT = 29.89 / 594.96; // ~0,0502 der Seitenbreite (~40 px)
+const PAGE_NUM_BASELINE_BOTTOM = 30.42 / 841.92; // ~0,0361 der Seitenhoehe (~41 px)
 function pageNumberMark(n: number): PageElement[] {
   const text = String(n);
-  // Box eng an die TATSAECHLICHE Textgroesse anpassen (echte Canvas-
-  // Textmessung, siehe fitTextBoxWidth/-Height) statt einer festen, grossen
-  // Flaeche - die fruehere Box war fuer die inzwischen entfernte Hinter-
-  // grundbox bemessen; mit einer viel groesseren Box als der Text selbst
-  // landete die (zentrierte) Zahl deutlich VOR der Ecke statt direkt darin.
-  // Rechtsbuendig UND eng zugeschnitten verankert die Zahl ihre untere
-  // rechte Ecke exakt bei (1-MARGIN, 1-MARGIN).
-  const w = fitTextBoxWidth(text, PAGE_NUM_FONT_SIZE, 1 - MARGIN, 700, SERIF);
+  // Rechtsbuendig: damit liegt die rechte TEXTkante immer exakt auf
+  // 1 - PAGE_NUM_EDGE_RIGHT, voellig unabhaengig davon, wie breit die Box ist
+  // oder wieviele Ziffern die Zahl hat. Die Box wird bewusst etwas
+  // grosszuegiger als der Text gewaehlt (statt exakt zugeschnitten), damit
+  // auch drei-/vierstellige Seitenzahlen und die ausladenden Schnoerkel der
+  // Schwungschrift nie am Boxrand abgeschnitten werden.
+  const w = 0.08;
   const h = fitTextBoxHeight(text, w, PAGE_NUM_FONT_SIZE, 700, SERIF);
-  const x = 1 - MARGIN - w;
-  const y = 1 - MARGIN - h;
+  const x = 1 - PAGE_NUM_EDGE_RIGHT - w;
+  // Ein Textfeld rendert seinen Text an der OBERKANTE beginnend, der gemessene
+  // Abstand bezieht sich aber auf die GRUNDLINIE - daher den Grundlinien-
+  // Versatz (halber Durchschuss + Oberlaenge der real geladenen Schrift,
+  // siehe textBaselineOffsetFrac) von der Zielposition zurueckrechnen.
+  const y =
+    1 - PAGE_NUM_BASELINE_BOTTOM - textBaselineOffsetFrac(PAGE_NUM_FONT_SIZE, 700, SERIF);
   const textEl: PageElement = {
     id: uid("el"),
     kind: "text",
@@ -272,10 +292,6 @@ function pageNumberMark(n: number): PageElement[] {
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
     fontFamily: SERIF,
-    // Ohne Hintergrundbox braucht die Zahl einen dezenten Schlagschatten,
-    // damit sie auch auf hellen Fotobereichen lesbar bleibt (analog
-    // exposeMark()/heroLogoBadge()).
-    textShadow: true,
   };
   return [textEl];
 }

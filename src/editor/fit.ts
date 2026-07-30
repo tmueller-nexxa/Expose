@@ -1,7 +1,7 @@
 // Ermittelt die groesstmoegliche Schriftgroesse, mit der ein Text vollstaendig
 // in eine Flaeche passt (mit Wortumbruch), damit nichts uebersteht.
 
-import { REF_H, REF_W } from "./constants";
+import { REF_H, REF_W, TEXT_LINE_HEIGHT } from "./constants";
 
 let ctx: CanvasRenderingContext2D | null = null;
 
@@ -166,6 +166,35 @@ export function fitTextBoxWidth(
   // exakt die gemessene Textbreite, keine zusaetzliche Polsterung.
   const maxPx = Math.max(10, maxWFrac * REF_W);
   return Math.min(maxLineW, maxPx) / REF_W;
+}
+
+// Abstand der Schrift-GRUNDLINIE der ersten Zeile von der OBERKANTE eines
+// Textfelds, als Anteil der Referenz-Seitenhoehe. Ein Textfeld rendert seinen
+// Text immer oben beginnend (siehe CanvasElement.tsx), die Grundlinie liegt
+// darin um den halben Durchschuss plus die Oberlaenge (Ascent) nach unten
+// versetzt - genau dieses CSS-Modell wird hier nachgerechnet.
+//
+// Nutzt bewusst die ECHTEN Metriken der tatsaechlich geladenen Schrift
+// (fontBoundingBoxAscent/-Descent) statt eines festen Schaetzwerts: die
+// Schwungschrift (Tangerine) hat deutlich andere Ober-/Unterlaengen als die
+// Grotesk-Schrift, ein pauschaler Faktor waere fuer eine der beiden immer
+// falsch. Gebraucht, um ein Element an seiner Schrift-Grundlinie statt an
+// seiner Boxoberkante auszurichten (z.B. die Seitenzahl, deren Abstand zur
+// Seitenunterkante sich auf die Grundlinie bezieht).
+export function textBaselineOffsetFrac(
+  fontSize: number,
+  weight = 400,
+  fontFamily?: string,
+): number {
+  const c = measureCtx();
+  c.font = `${weight} ${fontSize}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
+  const m = c.measureText("0");
+  // Fallback fuer den (theoretischen) Fall fehlender Metriken: grobe
+  // Standardaufteilung 80/20, damit die Rechnung nie NaN liefert.
+  const ascent = m.fontBoundingBoxAscent ?? fontSize * 0.8;
+  const descent = m.fontBoundingBoxDescent ?? fontSize * 0.2;
+  const halfLeading = (fontSize * TEXT_LINE_HEIGHT - (ascent + descent)) / 2;
+  return (halfLeading + ascent) / REF_H;
 }
 
 // Ermittelt die noetige Boxhoehe (Seitenanteil 0..1), damit ein Textfeld bei
