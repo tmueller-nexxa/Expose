@@ -18,6 +18,7 @@ import {
   analyzePhotoSections,
   MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
+  pickPriorityPhotos,
   writeExposeSectionTexts,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
@@ -58,6 +59,19 @@ const TYPE_LABEL: Record<ExposeType, string> = {
   mehrfamilienhaus: "Mehrfamilienhaus",
   gewerbe: "Gewerbeimmobilie",
 };
+
+// Titelabschnitt bekommt IMMER Vorrang vor allen anderen Abschnitten bei der
+// Fotowahl - wird per pickPriorityPhotos() VOR der normalen Zuordnung aus dem
+// GESAMTEN Pool reserviert (siehe Kommentar bei der Verwendung unten).
+const TITLE_PHOTO_CRITERION =
+  "Ein repraesentatives Aussen-/Uebersichtsfoto fuer die TITELSEITE der Immobilie (Fassade, Gesamtansicht von aussen, oder eine Luftaufnahme). Die Titelseite hat IMMER Vorrang vor allen anderen Abschnitten bei der Fotowahl - waehle das mit Abstand am besten geeignete Foto dafuer aus, auch wenn es fuer einen anderen Abschnitt ebenfalls gut passen wuerde.";
+
+// "Vorteile auf einen Blick"/"WOW-Effekt"-Abschnitte sollen bevorzugt
+// allgemeine Impressions-Fotos bekommen statt leer auszugehen, weil
+// spezifischere Raum-Abschnitte alle passenden Fotos zuerst beanspruchen.
+const VORTEILE_TITLE_RE = /wow-effekt|highlight|vorteile/i;
+const VORTEILE_PHOTO_CRITERION =
+  "Bis zu drei besonders eindrucksvolle, ALLGEMEINE Impressions-Fotos (Gesamtansichten/reprasentative Aufnahmen, KEINE Detailaufnahmen einzelner Kleinigkeiten) fuer einen Abschnitt, der die staerksten Vorzuege der Immobilie auf einen Blick zeigen soll - bevorzuge Fotos, die sich allgemein als Impression eignen, gegenueber Fotos, die eindeutig nur zu einem einzelnen, spezifischen Raum gehoeren.";
 
 // Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner) im neuen
 // "KI Exposé"-Design statt der bisherigen 1:1-Bilduebernahme (siehe
@@ -362,17 +376,74 @@ export function KiExposePage() {
       // 3) Fotos den KONKRETEN Abschnitten zuordnen (per Index, nicht nur
       // grober Art) - so bekommt z.B. "Bad" seine eigenen Fotos und teilt
       // sie sich nicht mit "Küche", nur weil beide dieselbe Art haben.
-      let assignments: { sectionIndex: number; caption: string }[] = [];
+      //
+      // VORAB-Reservierung fuer priorisierte Abschnitte: die normale
+      // Zuordnung (analyzePhotoSections) bewertet Fotos in Batches von 4
+      // weitgehend UNABHAENGIG gegen ALLE Abschnitte - dabei kann ein gutes
+      // Aussenfoto an einen inhaltlich aehnlich klingenden Abschnitt gehen
+      // (z.B. "Ein Zuhause, das von außen überzeugt"), waehrend die
+      // Titelseite leer ausgeht, obwohl sie IMMER Vorrang haben soll.
+      // Darum: Titelfoto (und bevorzugte Impressions-Fotos fuer "Vorteile"/
+      // "WOW-Effekt"-Abschnitte) VOR der allgemeinen Zuordnung in einem
+      // eigenen, den GESAMTEN Pool vergleichenden Aufruf reservieren und aus
+      // dem Pool entfernen, bevor die normale Zuordnung ueberhaupt zum Zug
+      // kommt.
+      const bySection: { src: string; caption: string }[][] = sections.map(() => []);
+      const overflow: string[] = [];
+      const consumed = new Set<number>();
+      const candidatesFor = () =>
+        photoPool.map((p, origIndex) => ({ ...p, origIndex })).filter((p) => !consumed.has(p.origIndex));
+
       if (photoPool.length > 0) {
         setProgress({ phase: "fotos", done: 0, total: photoPool.length });
-        const res = await analyzePhotoSections(data.api, photoPool, sections, (done, total) =>
-          setProgress({ phase: "fotos", done, total }),
-        );
-        if (!res.ok) {
-          setResultMsg({ ok: false, msg: res.message });
-          return;
+
+        const titelSectionIdx = sections.findIndex((s) => s.kind === "titel");
+        if (titelSectionIdx >= 0) {
+          const candidates = candidatesFor();
+          const picks = await pickPriorityPhotos(data.api, candidates, TITLE_PHOTO_CRITERION, 1);
+          for (const pick of picks) {
+            const orig = candidates[pick.index];
+            if (!orig) continue;
+            consumed.add(orig.origIndex);
+            bySection[titelSectionIdx].push({ src: orig.src, caption: pick.caption });
+          }
         }
-        assignments = res.photos;
+
+        for (let i = 0; i < sections.length; i++) {
+          if (!VORTEILE_TITLE_RE.test(sections[i].title)) continue;
+          const candidates = candidatesFor();
+          if (candidates.length === 0) continue;
+          const picks = await pickPriorityPhotos(data.api, candidates, VORTEILE_PHOTO_CRITERION, 3);
+          for (const pick of picks) {
+            const orig = candidates[pick.index];
+            if (!orig) continue;
+            consumed.add(orig.origIndex);
+            bySection[i].push({ src: orig.src, caption: pick.caption });
+          }
+        }
+
+        const remainingPool = candidatesFor();
+        const reservedCount = photoPool.length - remainingPool.length;
+        if (remainingPool.length > 0) {
+          const res = await analyzePhotoSections(
+            data.api,
+            remainingPool.map(({ src, name, pageText }) => ({ src, name, pageText })),
+            sections,
+            (done) => setProgress({ phase: "fotos", done: reservedCount + done, total: photoPool.length }),
+          );
+          if (!res.ok) {
+            setResultMsg({ ok: false, msg: res.message });
+            return;
+          }
+          res.photos.forEach((a, i) => {
+            const orig = remainingPool[i];
+            if (a.sectionIndex >= 0 && a.sectionIndex < sections.length) {
+              bySection[a.sectionIndex].push({ src: orig.src, caption: a.caption });
+            } else {
+              overflow.push(orig.src);
+            }
+          });
+        }
       }
 
       // Fotos direkt dem zugewiesenen Abschnitt zuordnen; alles ohne
@@ -385,16 +456,6 @@ export function KiExposePage() {
       // koennen, nicht nur eines.
       const capFor = (kind: (typeof sections)[number]["kind"]) =>
         kind === "titel" ? 1 : kind === "grundriss" ? 6 : kind === "galerie" || kind === "kontakt" ? 4 : 3;
-      const bySection: { src: string; caption: string }[][] = sections.map(() => []);
-      const overflow: string[] = [];
-      photoPool.forEach(({ src }, i) => {
-        const a = assignments[i] ?? { sectionIndex: -1, caption: "" };
-        if (a.sectionIndex >= 0 && a.sectionIndex < sections.length) {
-          bySection[a.sectionIndex].push({ src, caption: a.caption });
-        } else {
-          overflow.push(src);
-        }
-      });
       const sectionPhotos: { src: string; caption: string }[][] = sections.map((s, i) => {
         const cap = capFor(s.kind);
         const list = bySection[i];

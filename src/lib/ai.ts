@@ -1492,6 +1492,124 @@ export async function analyzePhotoSections(
   return { ok: true, photos: allPhotos };
 }
 
+// --- "KI Exposé": Prioritaets-Reservierung fuer einzelne Abschnitte -------
+//
+// analyzePhotoSections() oben bewertet jedes Foto in kleinen Batches (4)
+// weitgehend UNABHAENGIG gegen ALLE Abschnitte - dabei kann ein gutes
+// Aussenfoto an einen inhaltlich aehnlich klingenden Abschnitt gehen (z.B.
+// "Ein Zuhause, das von außen überzeugt"), waehrend ein eigentlich
+// hoeher priorisierter Abschnitt (Titelseite) leer ausgeht, weil kein
+// Batch je den GESAMTEN Pool auf einmal vergleichend sieht. Diese Funktion
+// behebt genau das: EIN einzelner, nicht gebatchter Aufruf ueber den
+// GESAMTEN uebergebenen Pool, der die (bis zu maxCount) am besten
+// geeigneten Fotos fuer EINEN bestimmten Zweck waehlt - wird VOR der
+// normalen Zuordnung aufgerufen, die Treffer werden aus dem Pool entfernt,
+// bevor die normale, gebatchte Zuordnung ueberhaupt zum Zug kommt.
+
+export interface PriorityPick {
+  index: number; // 0-basierter Index in die uebergebene photos-Liste.
+  caption: string;
+}
+
+// Genug fuer realistische Foto-Pools (siehe MAX_STRUCTURE_PAGES=35 als
+// vergleichbare Groessenordnung), verhindert aber ein uferloses Anwachsen
+// der Anfrage bei sehr grossen Uploads.
+const MAX_PRIORITY_PICK_PHOTOS = 40;
+
+function buildPriorityPickTool(maxCount: number) {
+  return {
+    name: "priority_photos",
+    description:
+      "Waehlt aus dem gesamten Fotopool die am besten geeigneten Fotos fuer einen bestimmten Zweck aus, geordnet vom am besten geeigneten zuerst.",
+    input_schema: {
+      type: "object",
+      properties: {
+        picks: {
+          type: "array",
+          maxItems: maxCount,
+          description: `Bis zu ${maxCount} Foto(s), geordnet vom am besten geeigneten zuerst (erster Eintrag = beste Wahl). Leeres Array, falls kein Foto passt.`,
+          items: {
+            type: "object",
+            properties: {
+              index: {
+                type: "integer",
+                minimum: 0,
+                description: "0-basierter Index des Fotos in der uebergebenen, nummerierten Liste.",
+              },
+              caption: {
+                type: "string",
+                description: "Sachliche Kurzbeschreibung des Fotoinhalts (max. 12 Woerter).",
+              },
+            },
+            required: ["index", "caption"],
+          },
+        },
+      },
+      required: ["picks"],
+    },
+  };
+}
+
+export async function pickPriorityPhotos(
+  api: ApiSettings,
+  photos: PhotoInput[],
+  criterion: string,
+  maxCount: number,
+): Promise<PriorityPick[]> {
+  if (!aiReady(api) || photos.length === 0 || maxCount <= 0) return [];
+
+  try {
+    const capped = photos.slice(0, MAX_PRIORITY_PICK_PHOTOS);
+    const { blocks: imageBlocks, validIndices } = await buildImageBlocks(capped.map((p) => p.src));
+    if (imageBlocks.length === 0) return [];
+
+    const system =
+      "Du waehlst aus einem Foto-Pool die am besten geeigneten Fotos fuer EINEN bestimmten Zweck aus - vergleiche dabei den GESAMTEN Pool auf einen Blick, nicht nur jedes Foto isoliert fuer sich. " +
+      `Zweck: ${criterion} ` +
+      `Waehle BIS ZU ${maxCount} Foto(s) aus, geordnet vom am besten geeigneten zuerst. Gibt es kein passendes Foto, liefere ein leeres Array - erfinde keine Treffer. ` +
+      "Antworte ausschliesslich ueber das Werkzeug \"priority_photos\".";
+
+    const content: (ImageBlock | { type: "text"; text: string })[] = [];
+    validIndices.forEach((origIdx, i) => {
+      const name = capped[origIdx]?.name;
+      content.push({ type: "text", text: `Foto (Index ${i}), Dateiname: "${name || "unbekannt"}":` });
+      content.push(imageBlocks[i]);
+    });
+    content.push({
+      type: "text",
+      text: `Hier sind ${imageBlocks.length} Foto(s) mit Index 0..${imageBlocks.length - 1}. Waehle bis zu ${maxCount} am besten geeignete aus.`,
+    });
+
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 1000,
+      system,
+      tools: [buildPriorityPickTool(maxCount)],
+      tool_choice: { type: "tool", name: "priority_photos" },
+      messages: [{ role: "user", content }],
+    });
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as { picks?: { index?: number; caption?: string }[] } | undefined;
+    const raw = input?.picks ?? [];
+
+    const seen = new Set<number>();
+    const result: PriorityPick[] = [];
+    for (const p of raw) {
+      const chunkIdx = Number(p?.index);
+      if (!Number.isInteger(chunkIdx) || chunkIdx < 0 || chunkIdx >= imageBlocks.length) continue;
+      const origIdx = validIndices[chunkIdx];
+      if (origIdx === undefined || seen.has(origIdx)) continue;
+      seen.add(origIdx);
+      result.push({ index: origIdx, caption: String(p?.caption ?? "").slice(0, 200) });
+      if (result.length >= maxCount) break;
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
 // --- "KI Exposé": Abschnittstexte schreiben --------------------------------
 
 export interface SectionText {
