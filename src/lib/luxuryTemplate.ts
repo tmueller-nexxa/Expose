@@ -16,7 +16,7 @@ import type {
   StoredFile,
 } from "./types";
 import { uid } from "./util";
-import { fitTextBoxHeight, splitTextToFitLines } from "../editor/fit";
+import { fitTextBoxHeight, fitTextBoxWidth, splitTextToFitLines } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import {
   EXPOSE_CREAM as CREAM,
@@ -245,8 +245,16 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
 const PAGE_NUM_Z = 900;
 const PAGE_NUM_FONT_SIZE = 46;
 function pageNumberMark(n: number): PageElement[] {
-  const w = 0.13;
-  const h = 0.085;
+  const text = String(n);
+  // Box eng an die TATSAECHLICHE Textgroesse anpassen (echte Canvas-
+  // Textmessung, siehe fitTextBoxWidth/-Height) statt einer festen, grossen
+  // Flaeche - die fruehere Box war fuer die inzwischen entfernte Hinter-
+  // grundbox bemessen; mit einer viel groesseren Box als der Text selbst
+  // landete die (zentrierte) Zahl deutlich VOR der Ecke statt direkt darin.
+  // Rechtsbuendig UND eng zugeschnitten verankert die Zahl ihre untere
+  // rechte Ecke exakt bei (1-MARGIN, 1-MARGIN).
+  const w = fitTextBoxWidth(text, PAGE_NUM_FONT_SIZE, 1 - MARGIN, 700, SERIF);
+  const h = fitTextBoxHeight(text, w, PAGE_NUM_FONT_SIZE, 700, SERIF);
   const x = 1 - MARGIN - w;
   const y = 1 - MARGIN - h;
   const textEl: PageElement = {
@@ -257,9 +265,9 @@ function pageNumberMark(n: number): PageElement[] {
     w,
     h,
     z: PAGE_NUM_Z,
-    text: String(n),
+    text,
     fontSize: PAGE_NUM_FONT_SIZE,
-    align: "center",
+    align: "right",
     color: GOLD,
     background: "rgba(0,0,0,0)",
     fontWeight: 700,
