@@ -19,6 +19,7 @@ import {
   MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
   pickPriorityPhotos,
+  transcribeBoilerplateText,
   writeExposeSectionTexts,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
@@ -98,26 +99,60 @@ const VORTEILE_TITLE_RE = /wow-effekt|highlight|vorteile/i;
 const VORTEILE_PHOTO_CRITERION =
   "Bis zu drei besonders eindrucksvolle, ALLGEMEINE Impressions-Fotos (Gesamtansichten/reprasentative Aufnahmen, KEINE Detailaufnahmen einzelner Kleinigkeiten) fuer einen Abschnitt, der die staerksten Vorzuege der Immobilie auf einen Blick zeigen soll - bevorzuge Fotos, die sich allgemein als Impression eignen, gegenueber Fotos, die eindeutig nur zu einem einzelnen, spezifischen Raum gehoeren.";
 
+// Ab dieser Textlaenge gilt eine Standardseite als brauchbar transkribiert -
+// darunter (leer oder nur ein paar Zeichen Kopfzeile) wird der Text per
+// KI-Bildtranskription nachgeholt. Gleiche Schwelle wie beim Einlesen der
+// Vorlage im Datenbereich (DataPage.tsx).
+const MIN_BOILERPLATE_TEXT_LEN = 20;
+
 // Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner) im neuen
 // "KI Exposé"-Design statt der bisherigen 1:1-Bilduebernahme (siehe
 // buildBoilerplateLuxuryPages() in luxuryTemplate.ts) - NUR fuer diesen
 // Ablauf, der klassische Editor-Ablauf nutzt weiterhin boilerplatePages()
-// unveraendert. Faellt auf die alte Bilduebernahme zurueck, falls fuer
-// KEINE der Seiten Text vorliegt (z.B. eine vor dieser Funktion
-// hochgeladene Vorlage ohne gespeicherten Text, oder eine Quelle ohne
-// PDF-Textebene).
+// unveraendert.
+//
+// Fehlt der Text, wird er HIER nachgeholt statt auf die Bilduebernahme
+// zurueckzufallen: gewonnen wird er sonst nur beim separaten Schritt "Aufbau
+// aus Beispielen uebernehmen" (DataPage.tsx). Eine Vorlage, die davor - oder
+// mit einem aelteren Stand - eingelesen wurde, bliebe dadurch dauerhaft ohne
+// Text und saemtliche Standardseiten kaemen weiterhin als Rasterbild samt
+// Originaldesign heraus (genau das gemeldete Verhalten). Mit dem Nachholen
+// greift das neue Design unabhaengig davon, wann die Vorlage eingelesen wurde.
 async function buildBoilerplateSection(
   api: ApiSettings,
   boilerplate: StoredBoilerplate | null,
   logo: StoredFile | null,
 ) {
   if (!boilerplate || boilerplate.pages.length === 0) return [];
-  const hasAnyText = boilerplate.pages.some((p) => p.text?.trim());
+
+  const texts = boilerplate.pages.map((p) => p.text?.trim() ?? "");
+  const missing = texts
+    .map((t, i) => (t.length < MIN_BOILERPLATE_TEXT_LEN ? i : -1))
+    .filter((i) => i >= 0);
+  if (missing.length > 0 && aiReady(api)) {
+    try {
+      const ocr = await transcribeBoilerplateText(
+        api,
+        missing.map((i) => boilerplate.pages[i].image),
+      );
+      missing.forEach((pageIdx, k) => {
+        const t = ocr[k]?.trim();
+        if (t) texts[pageIdx] = t;
+      });
+    } catch {
+      /* Transkription fehlgeschlagen - unten greift der Bild-Fallback. */
+    }
+  }
+
+  // Erst wenn auch danach KEINE einzige Seite Text hat (z.B. ohne API-Zugang),
+  // bleibt als letzter Ausweg die alte 1:1-Bilduebernahme - besser als die
+  // rechtlich relevanten Seiten ganz zu verlieren.
+  const hasAnyText = texts.some((t) => t.length > 0);
   if (!hasAnyText) return boilerplatePages(boilerplate);
 
   const inputs: BoilerplateLuxuryInput[] = boilerplate.pages
-    .filter((p) => p.text?.trim())
-    .map((p) => ({ kind: p.kind, text: p.text ?? "" }));
+    .map((p, i) => ({ kind: p.kind, text: texts[i] }))
+    .filter((p) => p.text.length > 0);
 
   // Fotos der Ansprechpartner-Seite (Makler-Portrait + ggf. Stilpunkte-/
   // Guetesiegel-Badge) aus der Originalseite herausloesen - die Seite wird
