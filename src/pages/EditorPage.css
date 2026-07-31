@@ -83,7 +83,13 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* "safe" ist wichtig, sobald die Seite hineingezoomt breiter als der
+     sichtbare Bereich wird: bei reinem "center" ragt der Inhalt auf BEIDEN
+     Seiten heraus und der linke Teil laesst sich nicht mehr scrollen (er
+     liegt vor dem Scroll-Ursprung). Mit "safe center" wird nur zentriert,
+     solange Platz da ist - sonst am Anfang ausgerichtet und damit
+     vollstaendig erreichbar. */
+  align-items: safe center;
   padding: 30px;
   gap: 14px;
 }
@@ -91,6 +97,9 @@
   box-shadow: 0 10px 40px rgba(15, 23, 42, 0.18);
   background: #fff;
   position: relative;
+  /* Verhindert, dass die Seite im Flex-Container zusammengedrueckt wird,
+     statt beim Hineinzoomen ueber den sichtbaren Bereich hinauszuwachsen. */
+  flex-shrink: 0;
 }
 .canvas-caption {
   font-size: 12.5px;

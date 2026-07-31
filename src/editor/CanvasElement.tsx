@@ -187,6 +187,10 @@ export function CanvasElement(props: Props) {
 
   function onImageWheel(e: React.WheelEvent) {
     if (!imgEditing) return;
+    // Strg/Cmd+Mausrad ist dem Zoom der GESAMTEN Seitenansicht vorbehalten
+    // (siehe EditorPage.tsx) - hier nicht abfangen, sonst liesse sich im
+    // "Bild anpassen"-Modus nicht mehr die Seite zoomen.
+    if (e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     e.stopPropagation();
     const img = el as ImageElement;

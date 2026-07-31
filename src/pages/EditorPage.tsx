@@ -52,6 +52,15 @@ function loadThumbRailWidth(): number {
   return THUMB_RAIL_DEFAULT;
 }
 
+// Zoomgrenzen und Schrittweite je Mausrad-Raste (Strg/Cmd+Mausrad).
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 1.12;
+// Mausrad-Rasten innerhalb dieser Zeit und ohne nennenswerte Mausbewegung
+// gelten als EINE zusammenhaengende Zoom-Geste mit gemeinsamem Ankerpunkt.
+const ZOOM_GESTURE_MS = 600;
+const ZOOM_ANCHOR_TOLERANCE = 6;
+
 // Stabile leere Auswahl fuer die nicht-interaktiven PageCanvas-Instanzen
 // (Miniaturansichten, Druckansicht) - vermeidet, bei jedem Render ein neues
 // Set anzulegen.
@@ -77,6 +86,10 @@ export function EditorPage() {
   const typeMeta = EXPOSE_TYPES.find((t) => t.id === exType);
 
   const [project, setProject] = useState<ExposeProject | null>(null);
+  // Erst wenn beides steht, rendert die Komponente den Editor (siehe frueher
+  // Rueckgabewert weiter unten) - vorher existieren Viewport/Seitenflaeche
+  // noch nicht, an die sich Listener haengen liessen.
+  const editorReady = !!project && !!typeMeta;
   const projectRef = useRef<ExposeProject | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
   // Mehrfachauswahl: per Auswahlrahmen (Marquee) oder Strg/Cmd+Klick koennen
@@ -98,11 +111,36 @@ export function EditorPage() {
   );
   const [toast, setToast] = useState<{ msg: string; err?: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [canvasWidth, setCanvasWidth] = useState(560);
+  // Grundbreite der Seitenansicht (aus der Fenstergroesse) und der davon
+  // getrennte, per Strg/Cmd+Mausrad einstellbare Zoom. Die eigentliche
+  // Darstellungsbreite ist das Produkt aus beidem - PageCanvas skaliert
+  // saemtliche Inhalte ueber diese eine Breite (siehe scale dort), darum
+  // genuegt das fuer einen sauberen, scharf gerenderten Zoom.
+  const [baseCanvasWidth, setBaseCanvasWidth] = useState(560);
+  const [zoom, setZoom] = useState(1);
+  const canvasWidth = Math.round(baseCanvasWidth * zoom);
   const [thumbRailWidth, setThumbRailWidth] = useState(loadThumbRailWidth);
   // Es liegt eine neuere Beispiel-Struktur vor als das offene Projekt.
   const [structureUpdate, setStructureUpdate] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const pageShadowRef = useRef<HTMLDivElement>(null);
+  // Punkt unter dem Mauszeiger beim Zoomen (Anteil der Seite + Bildschirm-
+  // position), damit er nach dem Neuaufbau wieder dorthin geschoben wird.
+  const zoomAnchorRef = useRef<{
+    fx: number;
+    fy: number;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
+  // Haelt den Ankerpunkt ueber eine zusammenhaengende Zoom-Geste hinweg fest
+  // (siehe ausfuehrliche Begruendung im wheel-Handler).
+  const zoomGestureRef = useRef<{
+    fx: number;
+    fy: number;
+    clientX: number;
+    clientY: number;
+    t: number;
+  } | null>(null);
 
   function onThumbRailResizeStart(e: React.PointerEvent) {
     const startWidth = thumbRailWidth;
@@ -166,16 +204,88 @@ export function EditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [exType]);
 
-  // Canvas-Breite an Viewport anpassen.
+  // Canvas-Grundbreite an Viewport anpassen.
   useLayoutEffect(() => {
     function measure() {
       const w = viewportRef.current?.clientWidth ?? 700;
-      setCanvasWidth(clamp(w - 60, 320, 720));
+      setBaseCanvasWidth(clamp(w - 60, 320, 720));
     }
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, []);
+
+  // Zoom per Strg/Cmd+Mausrad - zoomt AUSSCHLIESSLICH die Seitenansicht,
+  // nicht die Oberflaeche: der Browser-Zoom (der auch die Bearbeitungsleiste
+  // und alles andere mitskalieren wuerde) wird dafuer per preventDefault
+  // unterdrueckt. Der Listener wird bewusst nativ und nicht-passiv registriert
+  // - React haengt wheel-Handler am Wurzelelement passiv ein, dort waere
+  // preventDefault wirkungslos.
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return; // normales Scrollen unangetastet
+      e.preventDefault();
+      const pageEl = pageShadowRef.current;
+      if (!pageEl) return;
+      // Punkt unter dem Mauszeiger als Anteil der Seite merken - nach dem
+      // Neuaufbau wird genau dieser Punkt wieder unter die Maus geschoben,
+      // dadurch zoomt die Ansicht in den Bereich, auf den man zeigt.
+      //
+      // Dieser Anteil wird pro Zoom-GESTE nur EINMAL bestimmt und danach
+      // festgehalten: solange die Seite noch vollstaendig in den sichtbaren
+      // Bereich passt, gibt es nichts zu scrollen, die Seite verschiebt sich
+      // beim Vergroessern also zwangslaeufig unter dem stehenden Mauszeiger.
+      // Wuerde man den Anteil bei jeder Mausrad-Raste neu messen, wanderte
+      // der Ankerpunkt genau um diesen Betrag mit (gemessen: 0,25 -> 0,36
+      // ueber zehn Rasten) und man landete am Ende woanders als gezeigt.
+      const r = pageEl.getBoundingClientRect();
+      const now = performance.now();
+      const prev = zoomGestureRef.current;
+      const sameGesture =
+        prev !== null &&
+        now - prev.t < ZOOM_GESTURE_MS &&
+        Math.abs(e.clientX - prev.clientX) <= ZOOM_ANCHOR_TOLERANCE &&
+        Math.abs(e.clientY - prev.clientY) <= ZOOM_ANCHOR_TOLERANCE;
+      const fx = sameGesture ? prev.fx : (e.clientX - r.left) / r.width;
+      const fy = sameGesture ? prev.fy : (e.clientY - r.top) / r.height;
+      zoomGestureRef.current = { fx, fy, clientX: e.clientX, clientY: e.clientY, t: now };
+      zoomAnchorRef.current = { fx, fy, clientX: e.clientX, clientY: e.clientY };
+      const factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+      setZoom((z) => clamp(z * factor, MIN_ZOOM, MAX_ZOOM));
+    }
+    vp.addEventListener("wheel", onWheel, { passive: false });
+    return () => vp.removeEventListener("wheel", onWheel);
+    // Abhaengig von editorReady: solange das Projekt laedt, zeigt die
+    // Komponente nur den Ladebildschirm - der Viewport existiert dann noch
+    // gar nicht und der Listener liesse sich nicht anhaengen.
+  }, [editorReady]);
+
+  // Nach dem Zoom den gemerkten Punkt wieder unter den Mauszeiger schieben.
+  // Muss VOR dem Zeichnen laufen (useLayoutEffect), sonst waere ein Sprung
+  // sichtbar.
+  useLayoutEffect(() => {
+    const a = zoomAnchorRef.current;
+    const vp = viewportRef.current;
+    const pageEl = pageShadowRef.current;
+    if (!a || !vp || !pageEl) return;
+    zoomAnchorRef.current = null;
+    const r = pageEl.getBoundingClientRect();
+    const vpRect = vp.getBoundingClientRect();
+    // Position der Seite INNERHALB des scrollbaren Inhalts (unabhaengig vom
+    // aktuellen Scrollstand) - daraus laesst sich der Zielscrollwert absolut
+    // berechnen. Bewusst absolut statt relativ ("scrollLeft += ..."): solange
+    // die Seite noch in den sichtbaren Bereich passt, gibt es nichts zu
+    // scrollen und der Browser kappt den Wert. Bei relativer Rechnung bliebe
+    // dieser gekappte Anteil dauerhaft als Versatz stehen und wuerde sich
+    // ueber mehrere Zoomschritte aufsummieren; absolut gerechnet stimmt die
+    // Position wieder exakt, sobald genug Scrollraum da ist.
+    const contentX = r.left + vp.scrollLeft - vpRect.left;
+    const contentY = r.top + vp.scrollTop - vpRect.top;
+    vp.scrollLeft = contentX + a.fx * r.width - (a.clientX - vpRect.left);
+    vp.scrollTop = contentY + a.fy * r.height - (a.clientY - vpRect.top);
+  }, [canvasWidth]);
 
   const commit = useCallback((next: ExposeProject) => {
     next.updatedAt = Date.now();
@@ -927,7 +1037,7 @@ export function EditorPage() {
               Ziehen Sie Bilder auf die Bildflächen – dann „Generieren" klicken
             </div>
           )}
-          <div className="page-shadow">
+          <div className="page-shadow" ref={pageShadowRef}>
             <PageCanvas
               page={page}
               width={canvasWidth}
