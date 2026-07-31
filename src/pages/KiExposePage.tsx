@@ -165,7 +165,13 @@ async function buildBoilerplateSection(
   // eigentliche Portraitfoto verloren geht.
   const kontaktPages = boilerplate.pages.filter((p) => p.kind === "kontakt");
   const kontaktImages: string[] = [];
-  if (kontaktPages.length > 0 && aiReady(api)) {
+  // Bevorzugt die bereits BEIM EINLESEN herausgeloesten Fotos verwenden
+  // (siehe DataPage.tsx) - dann faellt hier keine erneute Bilderkennung an.
+  const preExtracted = kontaktPages.find((p) => p.personPhoto || p.stylePhoto);
+  if (preExtracted) {
+    if (preExtracted.personPhoto) kontaktImages.push(preExtracted.personPhoto);
+    if (preExtracted.stylePhoto) kontaktImages.push(preExtracted.stylePhoto);
+  } else if (kontaktPages.length > 0 && aiReady(api)) {
     try {
       const results = await analyzeKontaktPhotos(api, kontaktPages.map((p) => p.image));
       let personPhoto: string | null = null;

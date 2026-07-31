@@ -1,9 +1,15 @@
 // Blanko-Vorlagen pro Expose-Typ.
 //
-// Standardseiten (Impressum/AGB/Widerruf/Kontakt) werden 1:1 als Bild
-// uebernommen - hier zaehlt der wortgetreue, rechtssichere Text mehr als
-// freie Bearbeitbarkeit; nur erkannte Fotobereiche werden aus dem Bild
-// entfernt und durch Platzhalter ersetzt.
+// Standardseiten (Vorwort/Impressum/AGB/Widerruf/Ansprechpartner) werden aus
+// dem wortgetreu uebernommenen TEXT im eigenen Design neu aufgebaut. Aus der
+// Originalseite werden bewusst NUR zwei Bildinhalte weitergereicht: das
+// Portraitfoto des Maklers und das Stilpunkte-/Guetesiegel-Abzeichen (beide
+// bereits beim Einlesen der Vorlage herausgeloest, siehe DataPage.tsx).
+// Hintergruende, Farbflaechen und sonstige Designelemente der Vorlage werden
+// NICHT uebernommen. Nur wenn fuer eine Seite ueberhaupt kein Text zu
+// gewinnen war (z.B. ohne API-Zugang), bleibt als letzter Ausweg die alte
+// 1:1-Bilduebernahme - besser als die rechtlich relevanten Seiten ganz zu
+// verlieren.
 //
 // Inhaltsseiten (Titelseite, Objektbeschreibung, Lage, Ausstattung, ...)
 // werden dagegen OHNE eingebettetes Bild als editierbare Vektor-Elemente
@@ -26,6 +32,7 @@ import type {
   StoredLayout,
 } from "./types";
 import { uid } from "./util";
+import { buildBoilerplateLuxuryPages } from "./luxuryTemplate";
 
 // Fotos liegen IMMER auf der hintersten Ebene (direkt ueber dem gesperrten
 // Seitenhintergrund, falls vorhanden) - so verdecken sie nie Formen/Text/
@@ -73,11 +80,31 @@ function boilerplatePageToPage(p: CapturedImagePage): Page {
   };
 }
 
-export function boilerplatePages(bp: StoredBoilerplate | null): Page[] {
+export function boilerplatePages(
+  bp: StoredBoilerplate | null,
+  logo: StoredFile | null = null,
+): Page[] {
   if (!bp || bp.pages.length === 0) return [];
-  return [...bp.pages]
-    .sort((a, b) => a.order - b.order)
-    .map((p) => boilerplatePageToPage(p));
+  const sorted = [...bp.pages].sort((a, b) => a.order - b.order);
+
+  // Aus dem Text neu aufbauen - das ist der Normalfall. Nur Seiten, fuer die
+  // partout kein Text vorliegt, fallen einzeln auf die alte Bilduebernahme
+  // zurueck (siehe Dateikopf).
+  const withText = sorted.filter((p) => p.text?.trim());
+  if (withText.length > 0) {
+    const kontakt = sorted.find((p) => p.personPhoto || p.stylePhoto);
+    const kontaktImages = [kontakt?.personPhoto, kontakt?.stylePhoto].filter(
+      (s): s is string => Boolean(s),
+    );
+    const rebuilt = buildBoilerplateLuxuryPages(
+      withText.map((p) => ({ kind: p.kind, text: p.text ?? "" })),
+      kontaktImages,
+      logo,
+    );
+    const imageOnly = sorted.filter((p) => !p.text?.trim());
+    return [...rebuilt, ...imageOnly.map((p) => boilerplatePageToPage(p))];
+  }
+  return sorted.map((p) => boilerplatePageToPage(p));
 }
 
 // Baut aus einer 1:1 als Vektor-Elemente nachgebauten Inhaltsseite ein
@@ -334,7 +361,7 @@ export function createProject(
     id: uid("proj"),
     type,
     title: `${title} – Exposé`,
-    pages: [...pages, ...boilerplatePages(boilerplate)],
+    pages: [...pages, ...boilerplatePages(boilerplate, logo)],
     updatedAt: Date.now(),
     builtFrom: projectStamp(null, boilerplate),
   };
@@ -365,7 +392,7 @@ export function createProjectFromLayout(
     id: uid("proj"),
     type,
     title: `${TITLE[type]} – Exposé`,
-    pages: [...base, ...boilerplatePages(boilerplate)],
+    pages: [...base, ...boilerplatePages(boilerplate, logo)],
     updatedAt: Date.now(),
     builtFrom: projectStamp(layout, boilerplate),
   };

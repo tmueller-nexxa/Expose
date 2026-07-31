@@ -106,6 +106,14 @@ export interface BoilerplatePage extends CapturedImagePage {
   // transcribeBoilerplateText() in lib/ai.ts, aufgerufen in DataPage.tsx).
   // Optional, da beides fehlschlagen kann (z.B. kein API-Key vorhanden).
   text?: string;
+  // Die EINZIGEN Bildinhalte, die aus einer Standardseite uebernommen werden
+  // (beim Einlesen der Vorlage herausgeloest, siehe DataPage.tsx): das
+  // Portraitfoto des Maklers und das Stilpunkte-/Guetesiegel-Abzeichen der
+  // Ansprechpartner-Seite. Alles uebrige der Originalseite (Hintergruende,
+  // Farbflaechen, Schmuckelemente) wird bewusst NICHT weitergegeben - die
+  // Seiten werden ausschliesslich aus Text + diesen Fotos neu aufgebaut.
+  personPhoto?: string;
+  stylePhoto?: string;
 }
 
 export interface StoredBoilerplate {

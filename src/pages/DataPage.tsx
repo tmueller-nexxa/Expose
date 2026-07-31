@@ -13,6 +13,7 @@ import {
 } from "../lib/types";
 import {
   aiReady,
+  analyzeKontaktPhotos,
   analyzePagesDesign,
   analyzePagesPhotos,
   MAX_ANALYZE_PAGES,
@@ -24,7 +25,7 @@ import { aiProxyUrl } from "../firebase.config";
 import { fitTextBoxHeight } from "../editor/fit";
 import { IMAGE_Z } from "../lib/templates";
 import { BOILERPLATE_TITLES, detectBoilerplate } from "../lib/boilerplate";
-import { eraseRegionsFromImage } from "../lib/imageEdit";
+import { cropRegionFromImage, eraseRegionsFromImage } from "../lib/imageEdit";
 import { fileToDataUrl, fileToText, formatBytes, uid } from "../lib/util";
 import { pdfFirstPageToImage, renderPdfPages, type RenderedPage } from "../lib/pdf";
 import {
@@ -333,6 +334,33 @@ export function DataPage() {
           }
         } catch {
           /* Transkription fehlgeschlagen - Seite behaelt ggf. leeren Text, faellt dann auf die alte 1:1-Bilduebernahme zurueck. */
+        }
+      }
+
+      // Aus der Ansprechpartner-Seite die BEIDEN einzigen Bildinhalte
+      // herausloesen, die uebernommen werden sollen: das Portraitfoto des
+      // Maklers und das Stilpunkte-/Guetesiegel-Abzeichen. Alles uebrige der
+      // Originalseite (Hintergruende, Farbflaechen, Schmuckelemente) wird
+      // bewusst nicht weitergegeben - die Seiten entstehen spaeter neu aus
+      // Text + diesen Fotos. Bewusst schon HIER beim Einlesen und nicht erst
+      // bei jeder Generierung: so faellt die Bilderkennung genau einmal an.
+      const kontaktPages = boilerPages.filter((b) => b.kind === "kontakt");
+      if (kontaktPages.length > 0 && aiReady(data.api)) {
+        setProgress({ phase: "boiler", done: 0, total: kontaktPages.length });
+        try {
+          const found = await analyzeKontaktPhotos(
+            data.api,
+            kontaktPages.map((b) => pages[b.order]?.image ?? b.image),
+          );
+          for (let i = 0; i < kontaktPages.length; i++) {
+            const src = pages[kontaktPages[i].order]?.image ?? kontaktPages[i].image;
+            const r = found[i];
+            if (r?.personPhoto) kontaktPages[i].personPhoto = await cropRegionFromImage(src, r.personPhoto);
+            if (r?.stylePhoto) kontaktPages[i].stylePhoto = await cropRegionFromImage(src, r.stylePhoto);
+            setProgress({ phase: "boiler", done: i + 1, total: kontaktPages.length });
+          }
+        } catch {
+          /* Fotoerkennung fehlgeschlagen - die Seite entsteht dann ohne Fotos, der Text bleibt erhalten. */
         }
       }
 
