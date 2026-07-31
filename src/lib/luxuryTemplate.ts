@@ -247,19 +247,24 @@ function rule(x: number, y: number, w: number, color = GOLD): PageElement {
 // auch auf Seiten mit einem grossflaechigen Foto, das sonst bis in die
 // untere rechte Ecke reicht.
 //
-// Die beiden Abstaende sind aus der Referenzseite des Nutzers (Seite 22,
-// A4 = 594,96 x 841,92 pt) ausgemessen - NICHT der Inhaltsrand MARGIN (0,09),
-// der fuer die Seitenzahl viel zu gross ist und sie deutlich vor der Ecke
-// absetzt (genau der zuvor gemeldete Fehler):
-//   - rechte Textkante: 29,89 pt vor dem rechten Blattrand -> 29,89/594,96
-//   - Schrift-GRUNDLINIE: 30,42 pt ueber dem unteren Blattrand -> 30,42/841,92
-// Beide Werte beziehen sich auf die Schrift selbst (Textkante/Grundlinie),
-// nicht auf die umgebende Box - die Box wird darum unten aus diesen Werten
-// zurueckgerechnet.
+// Abstand zum rechten und unteren Blattrand, in Millimetern auf A4 - bewusst
+// NICHT der Inhaltsrand MARGIN (0,09), der fuer die Seitenzahl viel zu gross
+// ist und sie deutlich vor der Ecke absetzen wuerde.
+//
+// Beide Werte beziehen sich auf die SCHRIFT, nicht auf die umgebende Box -
+// die Box wird unten aus ihnen zurueckgerechnet:
+//   - rechts: die rechte TEXTkante (rechtsbuendig gesetzt, der Abstand gilt
+//     damit unveraendert fuer ein-, zwei- und dreistellige Seitenzahlen)
+//   - unten: die Schrift-GRUNDLINIE. Die Ziffern der Schwungschrift haben
+//     keine Unterlaenge (nachgemessen: 0), die Grundlinie ist hier also
+//     zugleich die sichtbare Unterkante der Ziffer.
 const PAGE_NUM_Z = 900;
 const PAGE_NUM_FONT_SIZE = 46;
-const PAGE_NUM_EDGE_RIGHT = 29.89 / 594.96; // ~0,0502 der Seitenbreite (~40 px)
-const PAGE_NUM_BASELINE_BOTTOM = 30.42 / 841.92; // ~0,0361 der Seitenhoehe (~41 px)
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+const PAGE_NUM_MARGIN_MM = 5;
+const PAGE_NUM_EDGE_RIGHT = PAGE_NUM_MARGIN_MM / A4_WIDTH_MM; // ~0,0238 der Breite (~19 px)
+const PAGE_NUM_BASELINE_BOTTOM = PAGE_NUM_MARGIN_MM / A4_HEIGHT_MM; // ~0,0168 der Hoehe (~19 px)
 function pageNumberMark(n: number): PageElement[] {
   const text = String(n);
   // Rechtsbuendig: damit liegt die rechte TEXTkante immer exakt auf
@@ -269,7 +274,6 @@ function pageNumberMark(n: number): PageElement[] {
   // auch drei-/vierstellige Seitenzahlen und die ausladenden Schnoerkel der
   // Schwungschrift nie am Boxrand abgeschnitten werden.
   const w = 0.08;
-  const h = fitTextBoxHeight(text, w, PAGE_NUM_FONT_SIZE, 700, SERIF);
   const x = 1 - PAGE_NUM_EDGE_RIGHT - w;
   // Ein Textfeld rendert seinen Text an der OBERKANTE beginnend, der gemessene
   // Abstand bezieht sich aber auf die GRUNDLINIE - daher den Grundlinien-
@@ -277,6 +281,11 @@ function pageNumberMark(n: number): PageElement[] {
   // siehe textBaselineOffsetFrac) von der Zielposition zurueckrechnen.
   const y =
     1 - PAGE_NUM_BASELINE_BOTTOM - textBaselineOffsetFrac(PAGE_NUM_FONT_SIZE, 700, SERIF);
+  // Bei so kleinem Randabstand ragt die grosszuegige Box unten ueber das Blatt
+  // hinaus - auf den verbleibenden Platz begrenzen, damit sie vollstaendig auf
+  // der Seite liegt. Die Ziffer selbst braucht nur die erste Zeile und bleibt
+  // dadurch unangetastet; abgeschnitten wuerde allenfalls leerer Raum.
+  const h = Math.min(fitTextBoxHeight(text, w, PAGE_NUM_FONT_SIZE, 700, SERIF), 1 - y);
   const textEl: PageElement = {
     id: uid("el"),
     kind: "text",
