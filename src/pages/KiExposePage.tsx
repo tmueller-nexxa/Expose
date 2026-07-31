@@ -60,6 +60,31 @@ const TYPE_LABEL: Record<ExposeType, string> = {
   gewerbe: "Gewerbeimmobilie",
 };
 
+// Erkennt eine PDF-Seite, die ein reines TEXTdokument ist (z.B. die
+// Sanierungs-/Eckdatenliste eines Datenblatts). Solche Seiten liefern nur
+// ihren Text fuer die Texterstellung und duerfen NICHT als Foto verwendet
+// werden - sonst erscheint eine Textseite als vermeintliches Foto im Exposé.
+//
+// Bewusst eng gefasst: es wird NUR aussortiert, wenn alle drei Bedingungen
+// zugleich zutreffen - viel Text UND kein einziges eingebettetes Rasterbild
+// UND kaum Vektorzeichnung. Damit bleiben die Faelle sicher erhalten, auf die
+// es ankommt:
+//   - Grundriss-/Planzeichnung (CAD): viele Pfade -> bleibt Foto
+//   - eingescannter Plan / Seite mit echtem Foto: imageCount > 0 -> bleibt Foto
+//   - Foto-Seite eines gestalteten Exposés: wenig Text -> bleibt Foto
+// Die Schwellen sind an echten Exposé-/Datenblattseiten gemessen: reine
+// Foto-/Planseiten kommen dort auf 17-85 Zeichen, gemischte Seiten auf
+// ~440-560, reine Textseiten (Vorwort/Impressum/AGB/Eckdaten) auf 800-2800.
+const TEXT_ONLY_MIN_CHARS = 500;
+const TEXT_ONLY_MAX_PATHS = 80;
+function isTextOnlyPdfPage(p: { text: string; imageCount: number; pathCount: number }): boolean {
+  return (
+    p.text.trim().length >= TEXT_ONLY_MIN_CHARS &&
+    p.imageCount === 0 &&
+    p.pathCount < TEXT_ONLY_MAX_PATHS
+  );
+}
+
 // Titelabschnitt bekommt IMMER Vorrang vor allen anderen Abschnitten bei der
 // Fotowahl - wird per pickPriorityPhotos() VOR der normalen Zuordnung aus dem
 // GESAMTEN Pool reserviert (siehe Kommentar bei der Verwendung unten).
@@ -361,7 +386,13 @@ export function KiExposePage() {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
         for (let idx = 0; idx < rendered.length; idx++) {
           const p = rendered[idx];
-          if (p.image) {
+          // Reine TEXTseiten eines Datenblatts (z.B. die Sanierungs-/
+          // Eckdatenliste) liefern nur ihren Text - sie duerfen NICHT als
+          // Foto in den Pool wandern, sonst landet eine Textseite als
+          // vermeintliches Foto im Exposé (z.B. auf einer Galerie-Seite).
+          // Gezeichnete Plaene (Grundrisse) und Seiten mit echten Fotos
+          // bleiben dagegen erhalten - siehe isTextOnlyPdfPage().
+          if (p.image && !isTextOnlyPdfPage(p)) {
             const name = rendered.length > 1 ? `${f.name} (Seite ${idx + 1})` : f.name;
             await addPhoto(p.image, name, p.text);
           }

@@ -107,7 +107,7 @@ export function DataPage() {
     return {
       pages: imgFiles
         .slice(0, MAX_ANALYZE_PAGES)
-        .map((f) => ({ image: f.dataUrl, text: "", imageCount: 0 })),
+        .map((f) => ({ image: f.dataUrl, text: "", imageCount: 0, pathCount: 0 })),
       source: imgFiles[0]?.name ?? "Bilder",
     };
   }

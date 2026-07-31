@@ -86,6 +86,12 @@ export interface RenderedPage {
   image: string; // DataURL
   text: string; // extrahierter Seitentext (exakt)
   imageCount: number; // Anzahl Bild-Operatoren auf der Seite
+  // Anzahl Vektor-Pfad-Operatoren - unterscheidet eine gezeichnete Seite
+  // (Grundriss/Plan: sehr viele Pfade) von einer reinen Textseite (nur
+  // vereinzelte Linien/Kaesten). Zusammen mit text/imageCount die Grundlage
+  // dafuer, Datenblatt-Textseiten NICHT als Fotos zu verwenden (siehe
+  // KiExposePage.tsx).
+  pathCount: number;
 }
 
 // Rendert Seiten UND extrahiert Text + Bildanzahl (fuer Standardseiten-Erkennung).
@@ -144,8 +150,9 @@ export async function renderPdfPages(
         /* ohne Textebene -> leer */
       }
 
-      // Bildanzahl aus der Operatorliste.
+      // Bild- und Pfadanzahl aus der Operatorliste.
       let imageCount = 0;
+      let pathCount = 0;
       try {
         const ops = await page.getOperatorList();
         const O = pdfjsLib.OPS;
@@ -156,6 +163,7 @@ export async function renderPdfPages(
             fn === O.paintImageMaskXObject
           )
             imageCount++;
+          if (fn === O.constructPath) pathCount++;
         }
       } catch {
         /* ignore */
@@ -176,7 +184,7 @@ export async function renderPdfPages(
         canvas.width = 0;
         canvas.height = 0;
       }
-      out.push({ image, text, imageCount });
+      out.push({ image, text, imageCount, pathCount });
       onProgress?.(i, count);
     }
   } catch (err) {
