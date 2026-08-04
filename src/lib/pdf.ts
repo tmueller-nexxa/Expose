@@ -193,6 +193,32 @@ export async function renderPdfPages(
   return out;
 }
 
+// Liest NUR die Textebene der ersten Seiten - ohne die Seiten zu rendern.
+// Gebraucht, wenn allein der Text zaehlt (z.B. die Objektanschrift aus einem
+// frisch hochgeladenen Datenblatt): das Rendern ist der mit Abstand teuerste
+// Teil von renderPdfPages() und waere hier reine Wartezeit fuer nichts.
+export async function extractPdfText(dataUrl: string, maxPages = 3): Promise<string> {
+  const parts: string[] = [];
+  try {
+    const bytes = await toBytes(dataUrl);
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const count = Math.min(pdf.numPages, maxPages);
+    for (let i = 1; i <= count; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      const line = tc.items
+        .map((raw) => ("str" in raw ? (raw as { str: string }).str : ""))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (line) parts.push(line);
+    }
+  } catch (err) {
+    console.warn("PDF-Textextraktion fehlgeschlagen:", err);
+  }
+  return parts.join("\n");
+}
+
 export async function pdfPageCount(dataUrl: string): Promise<number> {
   try {
     const bytes = await toBytes(dataUrl);

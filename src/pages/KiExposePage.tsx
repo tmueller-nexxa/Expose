@@ -6,6 +6,7 @@ import { useApp } from "../context/AppContext";
 import {
   EXPOSE_TYPES,
   type ApiSettings,
+  type ExposeAddress,
   type ExposeSection,
   type ExposeType,
   type StoredBoilerplate,
@@ -16,6 +17,7 @@ import {
   analyzeExposeStructure,
   analyzeKontaktPhotos,
   analyzePhotoSections,
+  extractObjectAddress,
   MAX_STRUCTURE_PAGES,
   MODEL_OPTIONS,
   pickPriorityPhotos,
@@ -34,8 +36,8 @@ import {
 } from "../lib/luxuryTemplate";
 import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { saveProjectNow } from "../lib/storage";
-import { fileToDataUrl, formatBytes, uid } from "../lib/util";
-import { renderPdfPages } from "../lib/pdf";
+import { buildExposeName, fileToDataUrl, formatBytes, uid } from "../lib/util";
+import { extractPdfText, renderPdfPages } from "../lib/pdf";
 import type { ExposeProject } from "../lib/types";
 import {
   IconCheck,
@@ -208,11 +210,46 @@ export function KiExposePage() {
     null,
   );
   const [resultMsg, setResultMsg] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [addressBusy, setAddressBusy] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const files = data.kiExposeFiles[activeType];
   const structure = data.kiExposeStructure[activeType];
   const previousStructure = data.kiExposeStructurePrevious[activeType];
+  const address = data.kiExposeAddress[activeType];
+
+  function setAddress(patch: Partial<ExposeAddress>) {
+    updateData((prev) => ({
+      ...prev,
+      kiExposeAddress: {
+        ...prev.kiExposeAddress,
+        [activeType]: { ...prev.kiExposeAddress[activeType], ...patch },
+      },
+    }));
+  }
+
+  // Anschrift aus den Datenblaettern vorschlagen. Liest nur die Textebene der
+  // PDFs (kein Rendern - siehe extractPdfText) und ueberschreibt eine bereits
+  // eingetragene Adresse NUR auf ausdrueckliche Anforderung ueber den Knopf
+  // (force), nie automatisch nach einem Upload.
+  async function suggestAddress(pdfs: StoredFile[], force: boolean) {
+    if (pdfs.length === 0 || !aiReady(data.api)) return;
+    if (!force && (address.street || address.city)) return;
+    setAddressBusy(true);
+    try {
+      let text = "";
+      for (const f of pdfs) {
+        text += `\n\n${await extractPdfText(f.dataUrl)}`;
+        if (text.length > 12000) break;
+      }
+      const found = await extractObjectAddress(data.api, text);
+      if (found && (found.street || found.city)) setAddress(found);
+    } catch {
+      /* Vorschlag fehlgeschlagen - die Felder bleiben zur Handeingabe leer. */
+    } finally {
+      setAddressBusy(false);
+    }
+  }
 
   // --- Datei-Uploads -------------------------------------------------------
   async function addFiles(list: File[]) {
@@ -234,6 +271,12 @@ export function KiExposePage() {
         [activeType]: [...prev.kiExposeFiles[activeType], ...stored],
       },
     }));
+    // Frisch hochgeladene Datenblaetter gleich nach der Objektanschrift
+    // durchsuchen - daraus entsteht spaeter der Name des gespeicherten Exposés.
+    void suggestAddress(
+      stored.filter((f) => f.mime === "application/pdf"),
+      false,
+    );
   }
 
   function removeFile(id: string) {
@@ -572,16 +615,42 @@ export function KiExposePage() {
       const allPages = [...pages, ...boilerplateSection];
       addPageNumbers(allPages);
 
+      // Exposé-Nummer vergeben und Namen daraus bilden. Die Nummer wird
+      // ausschliesslich hochgezaehlt und nie wiederverwendet - auch nicht,
+      // wenn ein Exposé spaeter geloescht wird (siehe AppData.exposeCounter).
+      const exposeNo = data.exposeCounter + 1;
+      const street = address.street.trim();
+      const city = address.city.trim();
+      const name =
+        street || city
+          ? buildExposeName(exposeNo, street, city)
+          : // Ohne Anschrift bleibt der Objekttyp als Unterscheidungsmerkmal -
+            // besser als eine Liste aus lauter blossen Nummern.
+            buildExposeName(exposeNo, TYPE_LABEL[activeType], "");
+      const now = Date.now();
       const project: ExposeProject = {
         id: uid("proj"),
         type: activeType,
         title: `${TYPE_LABEL[activeType]} – Exposé`,
         pages: allPages,
-        updatedAt: Date.now(),
-        builtFrom: `ki-expose:${Date.now()}`,
+        updatedAt: now,
+        builtFrom: `ki-expose:${now}`,
+        exposeNo,
+        name,
+        address: { street, city },
+        createdAt: now,
       };
+      // Legt das Exposé zugleich im Archiv ab (exposeNo ist gesetzt) - es ist
+      // damit ab sofort unter "Meine Exposés" wieder aufrufbar.
       await saveProjectNow(project);
-      setResultMsg({ ok: true, msg: `Exposé aus „${source}" generiert – wird geöffnet …` });
+      updateData((prev) => ({
+        ...prev,
+        exposeCounter: Math.max(prev.exposeCounter, exposeNo),
+      }));
+      setResultMsg({
+        ok: true,
+        msg: `Exposé „${name}" aus „${source}" generiert und gespeichert – wird geöffnet …`,
+      });
       navigate(`/editor/${activeType}`);
     } catch (err) {
       setResultMsg({ ok: false, msg: (err as Error).message });
@@ -681,6 +750,60 @@ export function KiExposePage() {
                 e.target.value = "";
               }}
             />
+          </div>
+
+          <div className="ki-address">
+            <div className="ki-address-head">
+              <strong>Objektanschrift</strong>
+              <span className="hint">
+                Bildet den Namen des gespeicherten Exposés – z.&nbsp;B.{" "}
+                <code>
+                  {buildExposeName(
+                    data.exposeCounter + 1,
+                    address.street.trim() || "Am Waldberg 3",
+                    address.city.trim() || "Lüdenscheid",
+                  )}
+                </code>
+              </span>
+            </div>
+            <div className="ki-address-fields">
+              <label>
+                Straße &amp; Hausnummer
+                <input
+                  type="text"
+                  value={address.street}
+                  placeholder="Am Waldberg 3"
+                  onChange={(e) => setAddress({ street: e.target.value })}
+                />
+              </label>
+              <label>
+                Ort
+                <input
+                  type="text"
+                  value={address.city}
+                  placeholder="Lüdenscheid"
+                  onChange={(e) => setAddress({ city: e.target.value })}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={addressBusy || pdfCount === 0 || !aiReady(data.api)}
+                onClick={() =>
+                  suggestAddress(
+                    files.filter((f) => f.mime === "application/pdf"),
+                    true,
+                  )
+                }
+                title={
+                  pdfCount === 0
+                    ? "Erst ein PDF-Datenblatt hochladen"
+                    : "Anschrift erneut aus den Datenblättern lesen"
+                }
+              >
+                {addressBusy ? "Wird gelesen …" : "Aus Datenblatt übernehmen"}
+              </button>
+            </div>
           </div>
 
           {files.length > 0 && (

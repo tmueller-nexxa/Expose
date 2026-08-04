@@ -177,6 +177,32 @@ export interface KiExposeStructure {
   createdAt: number;
 }
 
+// --- Exposé-Archiv: gespeicherte, wieder aufrufbare Exposés --------------
+
+// Objektadresse - Grundlage fuer den automatisch vergebenen Exposé-Namen
+// (Beispiel: "Expose001-Am Waldberg3-Lüdenscheid").
+export interface ExposeAddress {
+  street: string; // Strasse + Hausnummer, z.B. "Am Waldberg 3"
+  city: string; // Ort, z.B. "Lüdenscheid"
+}
+
+// Schlanker Katalogeintrag fuer die Uebersicht "Meine Exposés". Bewusst OHNE
+// die Seiten selbst: die enthalten bei einem fertigen Exposé viele Megabyte
+// Bilddaten: die Liste muss aber schnell und vollstaendig ladbar sein. Die
+// Seiten liegen darum getrennt unter der jeweiligen id (siehe storage.ts).
+export interface ExposeEntry {
+  id: string;
+  exposeNo: number;
+  name: string;
+  type: ExposeType;
+  address: ExposeAddress;
+  pageCount: number;
+  createdAt: number;
+  updatedAt: number;
+  // Kleines Vorschaubild (Titelfoto, herunterskaliert) fuer die Liste.
+  thumbnail?: string;
+}
+
 // Persistente Nutzerdaten (Uploads, Keys ...).
 export interface AppData {
   examples: Record<ExposeType, StoredFile[]>;
@@ -195,6 +221,15 @@ export interface AppData {
   // "Rueckgaengig" nach einer Neu-Generierung.
   kiExposeStructure: Record<ExposeType, KiExposeStructure | null>;
   kiExposeStructurePrevious: Record<ExposeType, KiExposeStructure | null>;
+  // "KI Exposé": Anschrift des Objekts pro Typ - Grundlage fuer den beim
+  // Generieren vergebenen Exposé-Namen. Wird beim Hochladen eines
+  // Datenblatts per KI vorgeschlagen und bleibt danach korrigierbar.
+  kiExposeAddress: Record<ExposeType, ExposeAddress>;
+  // Zuletzt vergebene Exposé-Nummer. Wird ausschliesslich hochgezaehlt: eine
+  // einmal vergebene Nummer wird NIE wiederverwendet, auch nicht, wenn das
+  // zugehoerige Exposé geloescht wurde (die Nummer steht in Angeboten/
+  // E-Mails/Ausdrucken und muss dauerhaft eindeutig auf ein Objekt zeigen).
+  exposeCounter: number;
 }
 
 // --- Editor / Dokument-Modell -------------------------------------------
@@ -298,4 +333,13 @@ export interface ExposeProject {
   // Herkunft des Aufbaus: "default" oder Zeitstempel der gelernten Struktur.
   // So erkennt der Editor, ob eine neuere Beispiel-Struktur vorliegt.
   builtFrom?: string;
+  // --- Archiv-Kopfdaten (nur bei archivierten Exposés gesetzt) ------------
+  // Vorhanden, sobald das Exposé unter einer Nummer abgelegt wurde. Der
+  // Editor traegt Aenderungen darueber automatisch ins Archiv zurueck (siehe
+  // saveProject() in storage.ts), damit die gespeicherte Fassung immer dem
+  // entspricht, was zuletzt bearbeitet wurde.
+  exposeNo?: number;
+  name?: string;
+  address?: ExposeAddress;
+  createdAt?: number;
 }

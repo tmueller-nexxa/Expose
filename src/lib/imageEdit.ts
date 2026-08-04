@@ -167,6 +167,31 @@ export async function cropRegionFromImage(imageDataUrl: string, rect: Rect): Pro
   return canvas.toDataURL("image/png");
 }
 
+// Verkleinert ein Bild auf eine Vorschaugroesse. Gebraucht fuer das
+// Vorschaubild im Exposé-Archiv: dort darf NICHT das Originalfoto liegen -
+// der Katalog wird als EIN Datensatz gespeichert (im Cloud-Modus als
+// Firestore-Dokument mit 1 MB Grenze) und wuerde mit ein paar
+// Original-Titelfotos sofort daran scheitern. Das Seitenverhaeltnis bleibt
+// erhalten; kleinere Bilder werden nicht vergroessert.
+export async function makeThumbnail(imageDataUrl: string, maxWidth = 240): Promise<string> {
+  try {
+    const img = await loadImage(imageDataUrl);
+    const srcW = img.naturalWidth || img.width;
+    const srcH = img.naturalHeight || img.height;
+    if (srcW === 0 || srcH === 0) return "";
+    const scale = Math.min(1, maxWidth / srcW);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(srcW * scale));
+    canvas.height = Math.max(1, Math.round(srcH * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.7);
+  } catch {
+    return "";
+  }
+}
+
 // Wahrnehmungs-Hash (average hash, 8x8 Graustufen-Raster) fuer Fotos -
 // erkennt auch NICHT byte-identische, aber visuell (nahezu) gleiche Fotos
 // als Duplikate. Ein reiner String-Vergleich der DataURL faengt nur exakt

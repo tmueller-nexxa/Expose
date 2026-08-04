@@ -18,6 +18,7 @@ export function TopBar() {
         </NavLink>
         <NavLink to="/data">Datenbereich</NavLink>
         <NavLink to="/ki-expose">KI Exposé</NavLink>
+        <NavLink to="/exposes">Meine Exposés</NavLink>
       </nav>
       <div className="spacer" />
       {cloudMode && authUser?.email && (

@@ -3,6 +3,8 @@ rules_version = '2';
 // Jeder Nutzer kann ausschliesslich seine EIGENEN Daten lesen/schreiben.
 // Datenmodell: /users/{uid}/state/{docId}
 //   docId = "appData" | "project_einfamilienhaus" | "project_wohnung" | ...
+//         | "exposeIndex" (Katalog des Exposé-Archivs)
+// sowie:      /users/{uid}/exposes/{exposeId} (archivierte Exposés)
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid}/{document=**} {

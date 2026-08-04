@@ -1,0 +1,91 @@
+.expose-grid {
+  display: grid;
+  /* Breit genug, dass Vorschaubild, Name und die drei Schaltflaechen
+     nebeneinander Platz haben, ohne aus der Karte zu laufen. */
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.expose-card {
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.expose-thumb {
+  flex: 0 0 96px;
+  width: 96px;
+  height: 132px; /* A4-Verhaeltnis der Titelseite */
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f4f5f7;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa3af;
+}
+.expose-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.expose-thumb:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.expose-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.expose-body h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+  /* Lange Namen (Adresse + Ort) duerfen die Karte nicht sprengen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.expose-rename {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  width: 100%;
+}
+.expose-meta {
+  font-size: 12px;
+  color: #6b7280;
+}
+.expose-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+/* Ohne das behalten die Schaltflaechen ihre Wunschbreite und schieben sich
+   in schmalen Karten seitlich aus der Karte heraus (statt umzubrechen). */
+.expose-actions .btn {
+  min-width: 0;
+  padding-inline: 10px;
+}
+.expose-del {
+  color: #b42318;
+  margin-left: auto;
+}

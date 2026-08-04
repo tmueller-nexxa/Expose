@@ -3,12 +3,24 @@
 // ein Nutzer angemeldet ist, laufen Laden/Speichern stattdessen ueber
 // Firestore + Storage (siehe cloud.ts) - fuer alle Aufrufer transparent.
 
-import type { AppData, ExposeProject, ExposeType } from "./types";
+import type {
+  AppData,
+  ExposeEntry,
+  ExposeProject,
+  ExposeType,
+  ImageElement,
+} from "./types";
+import { makeThumbnail } from "./imageEdit";
 import {
+  cloudDeleteExpose,
   cloudEnabled,
   cloudLoadAppData,
+  cloudLoadExpose,
+  cloudLoadExposeIndex,
   cloudLoadProject,
   cloudSaveAppData,
+  cloudSaveExpose,
+  cloudSaveExposeIndex,
   cloudSaveProject,
   mapFirestoreError,
   resetUploadCache,
@@ -79,6 +91,25 @@ async function idbSet(key: string, value: unknown): Promise<void> {
   } catch {
     useMemory = true;
     memStore.set(key, value);
+  }
+}
+
+async function idbDelete(key: string): Promise<void> {
+  if (useMemory) {
+    memStore.delete(key);
+    return;
+  }
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    useMemory = true;
+    memStore.delete(key);
   }
 }
 
@@ -158,6 +189,13 @@ export function emptyAppData(): AppData {
       mehrfamilienhaus: null,
       gewerbe: null,
     },
+    kiExposeAddress: {
+      einfamilienhaus: { street: "", city: "" },
+      wohnung: { street: "", city: "" },
+      mehrfamilienhaus: { street: "", city: "" },
+      gewerbe: { street: "", city: "" },
+    },
+    exposeCounter: 0,
   };
 }
 
@@ -175,6 +213,9 @@ function mergeAppData(stored: AppData): AppData {
       ...base.kiExposeStructurePrevious,
       ...stored.kiExposeStructurePrevious,
     },
+    kiExposeAddress: { ...base.kiExposeAddress, ...stored.kiExposeAddress },
+    // Aeltere Datenstaende kennen den Zaehler noch nicht - dann bei 0 starten.
+    exposeCounter: stored.exposeCounter ?? base.exposeCounter,
   };
 }
 
@@ -224,6 +265,10 @@ export async function loadProject(
 }
 
 export function saveProject(project: ExposeProject): void {
+  // Bearbeitungsstand eines archivierten Exposés immer mit ins Archiv
+  // zurueckschreiben - sonst zeigte "Meine Exposés" dauerhaft den Stand von
+  // der Generierung, waehrend im Editor laengst weitergearbeitet wurde.
+  if (project.exposeNo !== undefined) void saveExpose(project);
   const uid = useCloud();
   if (uid) {
     debounced(`project:${uid}:${project.type}`, () => {
@@ -245,6 +290,7 @@ export function saveProject(project: ExposeProject): void {
 // den naechsten saveProject()-Aufruf mit demselben Debounce-Schluessel
 // ueberschrieben/verworfen werden, bevor er je an Firestore gesendet wurde.
 export async function saveProjectNow(project: ExposeProject): Promise<void> {
+  if (project.exposeNo !== undefined) await saveExpose(project);
   const uid = useCloud();
   if (uid) {
     const key = `project:${uid}:${project.type}`;
@@ -263,6 +309,167 @@ export async function saveProjectNow(project: ExposeProject): Promise<void> {
     return;
   }
   await idbSet(projectKey(project.type), project);
+}
+
+// --- Exposé-Archiv -------------------------------------------------------
+//
+// Zweischichtig: ein schlanker KATALOG mit den Kopfdaten aller Exposés
+// (Nummer, Name, Adresse, Vorschaubild) und daneben jedes Exposé einzeln
+// unter seiner id. Die Uebersichtsseite braucht so nur den Katalog zu laden -
+// ein fertiges Exposé bringt schnell zweistellige Megabyte an Bilddaten mit,
+// die beim blossen Durchsehen der Liste niemand braucht.
+
+const EXPOSE_INDEX_KEY = "expose-index";
+
+function exposeKey(id: string): string {
+  return `expose:${id}`;
+}
+
+export async function listExposes(): Promise<ExposeEntry[]> {
+  const uid = useCloud();
+  let entries: ExposeEntry[];
+  if (uid) {
+    try {
+      entries = await cloudLoadExposeIndex(uid);
+    } catch (e) {
+      console.error("Cloud-Laden (Exposé-Katalog) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+      return [];
+    }
+  } else {
+    entries = (await idbGet<ExposeEntry[]>(EXPOSE_INDEX_KEY)) ?? [];
+  }
+  // Neueste zuerst - so steht das gerade generierte Exposé immer oben.
+  return [...entries].sort((a, b) => b.exposeNo - a.exposeNo);
+}
+
+async function writeExposeIndex(entries: ExposeEntry[]): Promise<void> {
+  const uid = useCloud();
+  if (uid) {
+    try {
+      await cloudSaveExposeIndex(uid, entries);
+    } catch (e) {
+      console.error("Cloud-Speichern (Exposé-Katalog) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+    }
+    return;
+  }
+  await idbSet(EXPOSE_INDEX_KEY, entries);
+}
+
+export async function loadExpose(id: string): Promise<ExposeProject | undefined> {
+  const uid = useCloud();
+  if (uid) {
+    try {
+      return (await cloudLoadExpose(uid, id)) ?? undefined;
+    } catch (e) {
+      console.error("Cloud-Laden (Exposé) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+      return undefined;
+    }
+  }
+  return idbGet<ExposeProject>(exposeKey(id));
+}
+
+// Erstes Foto der ersten Seite als Vorschaubild - das ist bei jedem
+// generierten Exposé das Titelfoto.
+async function buildThumbnail(project: ExposeProject): Promise<string | undefined> {
+  // Bewusst NUR die erste Seite betrachten: ein Exposé ohne Titelfoto
+  // bekommt lieber gar keine Vorschau als das Foto irgendeiner spaeteren
+  // Innenraumseite, das nichts wiedererkennbar macht.
+  const first = project.pages[0];
+  const photo = first?.elements.find(
+    (el): el is ImageElement => el.kind === "image" && Boolean(el.src),
+  );
+  if (!photo) return undefined;
+  const thumb = await makeThumbnail(photo.src);
+  return thumb || undefined;
+}
+
+// Legt ein Exposé im Archiv ab bzw. aktualisiert es. Der Katalogeintrag
+// wird dabei aus dem Projekt abgeleitet; ein bereits vorhandener Eintrag
+// behaelt sein Erstellungsdatum und - solange sich das Titelfoto nicht
+// geaendert hat - sein Vorschaubild.
+export async function saveExpose(project: ExposeProject): Promise<void> {
+  if (project.exposeNo === undefined) return;
+  const uid = useCloud();
+
+  if (uid) {
+    try {
+      await cloudSaveExpose(uid, project);
+    } catch (e) {
+      console.error("Cloud-Speichern (Exposé) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+    }
+  } else {
+    await idbSet(exposeKey(project.id), project);
+  }
+
+  const entries = uid
+    ? await cloudLoadExposeIndex(uid).catch(() => [] as ExposeEntry[])
+    : (await idbGet<ExposeEntry[]>(EXPOSE_INDEX_KEY)) ?? [];
+  const existing = entries.find((e) => e.id === project.id);
+  const entry: ExposeEntry = {
+    id: project.id,
+    exposeNo: project.exposeNo,
+    name: project.name ?? project.title,
+    type: project.type,
+    address: project.address ?? { street: "", city: "" },
+    pageCount: project.pages.length,
+    createdAt: existing?.createdAt ?? project.createdAt ?? Date.now(),
+    updatedAt: project.updatedAt,
+    // Vorschaubild nur EINMAL beim Anlegen berechnen: saveExpose() laeuft
+    // auch bei jeder Editor-Aenderung mit, und das Verkleinern ueber ein
+    // Canvas bei jedem Zug am Bildrahmen waere reine Verschwendung.
+    thumbnail: existing?.thumbnail ?? (await buildThumbnail(project)),
+  };
+  const next = existing
+    ? entries.map((e) => (e.id === entry.id ? entry : e))
+    : [...entries, entry];
+  await writeExposeIndex(next);
+}
+
+// Entfernt ein Exposé samt Katalogeintrag. Die vergebene Nummer bleibt
+// verbraucht (siehe AppData.exposeCounter) - sie wird nicht neu vergeben.
+export async function deleteExpose(id: string): Promise<void> {
+  const uid = useCloud();
+  if (uid) {
+    try {
+      await cloudDeleteExpose(uid, id);
+    } catch (e) {
+      console.error("Cloud-Löschen (Exposé) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+    }
+  } else {
+    await idbDelete(exposeKey(id));
+  }
+  const entries = await listExposes();
+  await writeExposeIndex(entries.filter((e) => e.id !== id));
+}
+
+// Benennt ein archiviertes Exposé um (Katalog UND gespeichertes Exposé,
+// damit der Name beim erneuten Oeffnen nicht wieder zurueckspringt).
+export async function renameExpose(id: string, name: string): Promise<void> {
+  const entries = await listExposes();
+  await writeExposeIndex(entries.map((e) => (e.id === id ? { ...e, name } : e)));
+  const project = await loadExpose(id);
+  if (!project) return;
+  const updated = { ...project, name };
+  const uid = useCloud();
+  if (uid) {
+    try {
+      await cloudSaveExpose(uid, updated);
+    } catch (e) {
+      console.error("Cloud-Speichern (Exposé) fehlgeschlagen:", e);
+      onCloudError?.(mapFirestoreError(e));
+    }
+  } else {
+    await idbSet(exposeKey(id), updated);
+  }
+  // Falls dasselbe Exposé gerade im Editor offen ist (Projekt-Ablage seines
+  // Typs), auch dort den Namen nachziehen.
+  const open = await loadProject(project.type);
+  if (open?.id === id) await saveProjectNow({ ...open, name });
 }
 
 // --- Auth (einfaches Demo-Login) ----------------------------------------

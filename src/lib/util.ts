@@ -34,6 +34,38 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
 
+// Baut den Namen eines archivierten Exposés nach dem vereinbarten Muster:
+//   Expose001-Am Waldberg3-Lüdenscheid
+// Also laufende Nummer (mindestens dreistellig), Strasse MIT direkt
+// angehaengter Hausnummer (das Leerzeichen davor faellt weg) und Ort, jeweils
+// mit Bindestrich getrennt. Fehlt ein Teil der Adresse, entfaellt er samt
+// Trennstrich, damit kein Name wie "Expose001--Lüdenscheid" entsteht.
+//
+// Zeichen, die in Dateinamen Aerger machen (Pfadtrenner, Doppelpunkt,
+// Platzhalter), werden entfernt - der Name landet beim Export als
+// Dateiname und muss darum auf allen Systemen benutzbar bleiben.
+export function buildExposeName(
+  exposeNo: number,
+  street: string,
+  city: string,
+): string {
+  const clean = (s: string) =>
+    s
+      .replace(/[\\/:*?"<>|]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  // "Am Waldberg 3" -> "Am Waldberg3": nur das Leerzeichen VOR der
+  // abschliessenden Hausnummer entfaellt, Leerzeichen innerhalb des
+  // Strassennamens bleiben erhalten.
+  const compactStreet = clean(street).replace(/\s+(\d+\s*[a-zA-Z]?)$/, "$1");
+  const parts = [
+    `Expose${String(Math.max(0, exposeNo)).padStart(3, "0")}`,
+    compactStreet,
+    clean(city),
+  ].filter(Boolean);
+  return parts.join("-");
+}
+
 // DataURL -> { mediaType, base64 } fuer die Anthropic-API. Erkennt auch
 // echte https-URLs (in die Cloud ausgelagerte Dateien, siehe
 // cloud.ts/offloadBlobs - StoredFile.dataUrl/ImageElement.src kann nach

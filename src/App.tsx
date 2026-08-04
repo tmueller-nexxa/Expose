@@ -4,6 +4,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { HomePage } from "./pages/HomePage";
 import { DataPage } from "./pages/DataPage";
 import { KiExposePage } from "./pages/KiExposePage";
+import { ExposesPage } from "./pages/ExposesPage";
 import { EditorPage } from "./pages/EditorPage";
 import type { ReactNode } from "react";
 
@@ -62,6 +63,14 @@ export default function App() {
           element={
             <RequireAuth>
               <KiExposePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/exposes"
+          element={
+            <RequireAuth>
+              <ExposesPage />
             </RequireAuth>
           }
         />

@@ -1763,6 +1763,80 @@ export async function writeExposeSectionTexts(
   return { ok: true, texts: allTexts };
 }
 
+// --- Objektadresse aus den Datenblaettern lesen ---------------------------
+//
+// Grundlage fuer den automatisch vergebenen Exposé-Namen im Archiv
+// ("Expose001-Am Waldberg3-Lüdenscheid"). Bewusst als reine TEXT-Anfrage
+// (kein Bild): die Adresse steht in Datenblaettern praktisch immer in der
+// PDF-Textebene, das ist schneller, guenstiger und genauer als eine
+// Bilderkennung. Der Vorschlag ist nur ein Vorschlag - im "KI Exposé"-Bereich
+// stehen zwei Eingabefelder, in denen er sich jederzeit korrigieren laesst.
+
+const ADDRESS_TOOL = {
+  name: "objekt_adresse",
+  description:
+    "Liefert die Anschrift der im Text beschriebenen Immobilie (Strasse mit Hausnummer und Ort).",
+  input_schema: {
+    type: "object",
+    properties: {
+      street: {
+        type: "string",
+        description:
+          "Strasse MIT Hausnummer, z.B. \"Am Waldberg 3\". Leerer String, falls im Text nicht enthalten.",
+      },
+      city: {
+        type: "string",
+        description:
+          "Ort/Stadt OHNE Postleitzahl, z.B. \"Lüdenscheid\". Leerer String, falls im Text nicht enthalten.",
+      },
+    },
+    required: ["street", "city"],
+  },
+};
+
+// Genug fuer die ersten Seiten eines Datenblatts (dort steht die Anschrift),
+// ohne bei umfangreichen Unterlagen eine riesige Anfrage zu erzeugen.
+const MAX_ADDRESS_TEXT_CHARS = 12000;
+
+export interface ObjectAddress {
+  street: string;
+  city: string;
+}
+
+export async function extractObjectAddress(
+  api: ApiSettings,
+  text: string,
+): Promise<ObjectAddress | null> {
+  if (!aiReady(api) || !text.trim()) return null;
+  try {
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 300,
+      system:
+        "Du liest aus Immobilien-Unterlagen die Anschrift des ANGEBOTENEN OBJEKTS heraus. " +
+        "Achte darauf, NICHT die Anschrift des Maklers/Unternehmens zu nehmen (die steht meist im Briefkopf, im Impressum oder neben einem Ansprechpartner) - gesucht ist die Lage der Immobilie selbst. " +
+        "Findest du keine eindeutige Objektanschrift, liefere leere Strings statt zu raten. " +
+        "Antworte ausschliesslich ueber das Werkzeug \"objekt_adresse\".",
+      tools: [ADDRESS_TOOL],
+      tool_choice: { type: "tool", name: "objekt_adresse" },
+      messages: [
+        {
+          role: "user",
+          content: `Unterlagen zum Objekt:\n\n${text.slice(0, MAX_ADDRESS_TEXT_CHARS)}`,
+        },
+      ],
+    });
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as { street?: string; city?: string } | undefined;
+    const street = String(input?.street ?? "").trim().slice(0, 120);
+    const city = String(input?.city ?? "").trim().slice(0, 80);
+    if (!street && !city) return null;
+    return { street, city };
+  } catch {
+    return null;
+  }
+}
+
 // Kurzer Verbindungstest fuer den Keys-Bereich.
 export async function testApiKey(api: ApiSettings): Promise<AiError | { ok: true }> {
   if (!aiReady(api))

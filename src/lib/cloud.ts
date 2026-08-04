@@ -13,6 +13,7 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  deleteDoc,
   doc,
   getDoc,
   getFirestore,
@@ -27,7 +28,7 @@ import {
   type FirebaseStorage,
 } from "firebase/storage";
 import { firebaseConfig, isFirebaseConfigured } from "../firebase.config";
-import type { AppData, ExposeProject, ExposeType } from "./types";
+import type { AppData, ExposeEntry, ExposeProject, ExposeType } from "./types";
 
 let app: FirebaseApp | null = null;
 let authInst: Auth | null = null;
@@ -219,4 +220,48 @@ export async function cloudSaveProject(
   const offloaded = await offloadBlobs(uid, project);
   await setDoc(doc(db(), "users", uid, "state", `project_${project.type}`), offloaded);
   return offloaded;
+}
+
+// --- Exposé-Archiv -------------------------------------------------------
+//
+// Der Katalog (Kopfdaten aller Exposés) liegt als EIN Dokument, die Exposés
+// selbst je als eigenes Dokument in einer Sammlung. So laesst sich die
+// Uebersicht mit einem einzigen Lesevorgang aufbauen, ohne saemtliche
+// Exposé-Seiten (viele Megabyte) mitzuladen.
+
+interface ExposeIndexDoc {
+  entries: ExposeEntry[];
+}
+
+export async function cloudLoadExposeIndex(uid: string): Promise<ExposeEntry[]> {
+  const snap = await getDoc(doc(db(), "users", uid, "state", "exposeIndex"));
+  return snap.exists() ? ((snap.data() as ExposeIndexDoc).entries ?? []) : [];
+}
+
+export async function cloudSaveExposeIndex(
+  uid: string,
+  entries: ExposeEntry[],
+): Promise<void> {
+  const offloaded = await offloadBlobs(uid, { entries });
+  await setDoc(doc(db(), "users", uid, "state", "exposeIndex"), offloaded);
+}
+
+export async function cloudLoadExpose(
+  uid: string,
+  id: string,
+): Promise<ExposeProject | null> {
+  const snap = await getDoc(doc(db(), "users", uid, "exposes", id));
+  return snap.exists() ? (snap.data() as ExposeProject) : null;
+}
+
+export async function cloudSaveExpose(
+  uid: string,
+  project: ExposeProject,
+): Promise<void> {
+  const offloaded = await offloadBlobs(uid, project);
+  await setDoc(doc(db(), "users", uid, "exposes", project.id), offloaded);
+}
+
+export async function cloudDeleteExpose(uid: string, id: string): Promise<void> {
+  await deleteDoc(doc(db(), "users", uid, "exposes", id));
 }
