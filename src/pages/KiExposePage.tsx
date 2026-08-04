@@ -11,6 +11,7 @@ import {
   type ExposeType,
   type StoredBoilerplate,
   type StoredFile,
+  type StoredLayout,
 } from "../lib/types";
 import {
   aiReady,
@@ -34,12 +35,17 @@ import {
   type BoilerplateLuxuryInput,
   type KiExposeSectionInput,
 } from "../lib/luxuryTemplate";
+import {
+  buildLayoutBoilerplatePages,
+  buildLayoutPages,
+  sectionsFromLayout,
+} from "../lib/layoutFill";
 import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { ensureScriptFontLoaded } from "../editor/fit";
 import { saveProjectNow } from "../lib/storage";
 import { buildExposeName, fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { extractPdfText, renderPdfPages } from "../lib/pdf";
-import type { ExposeProject } from "../lib/types";
+import type { ExposeProject, Page } from "../lib/types";
 import {
   IconCheck,
   IconImage,
@@ -125,6 +131,11 @@ async function buildBoilerplateSection(
   api: ApiSettings,
   boilerplate: StoredBoilerplate | null,
   logo: StoredFile | null,
+  // Aus dem Beispiel uebernommenes Design: liegt es vor, entstehen auch die
+  // Standardseiten darin, damit das Exposé bis zur letzten Seite aus einem
+  // Guss ist. Uebernommen wird dabei die GESTALTUNG der Vorlage - der Inhalt
+  // dieser Seiten bleibt der wortgetreu extrahierte Text.
+  layout: StoredLayout | null,
 ) {
   if (!boilerplate || boilerplate.pages.length === 0) return [];
 
@@ -197,6 +208,13 @@ async function buildBoilerplateSection(
     }
   }
 
+  if (layout && layout.pages.length > 0) {
+    const inDesign = buildLayoutBoilerplatePages(layout, inputs, kontaktImages, logo);
+    // Leeres Ergebnis heisst: die Vorlage bietet keine brauchbare Textflaeche
+    // (siehe dort) - dann greift der bisherige Aufbau, damit die Texte nicht
+    // verloren gehen.
+    if (inDesign.length > 0) return inDesign;
+  }
   return buildBoilerplateLuxuryPages(inputs, kontaktImages, logo);
 }
 
@@ -217,6 +235,9 @@ export function KiExposePage() {
   const files = data.kiExposeFiles[activeType];
   const structure = data.kiExposeStructure[activeType];
   const previousStructure = data.kiExposeStructurePrevious[activeType];
+  // Aus dem Beispiel-Exposé uebernommenes Design (Datenbereich). Ist eines
+  // vorhanden, wird das Exposé darin aufgebaut - siehe generate().
+  const activeLayout = data.layouts[activeType];
   const address = data.kiExposeAddress[activeType];
 
   function setAddress(patch: Partial<ExposeAddress>) {
@@ -383,9 +404,16 @@ export function KiExposePage() {
     }
     setGenerating(true);
     try {
-      // 1) Seitenaufbau: vorhandenen wiederverwenden oder neu ableiten.
-      let sections = structure?.sections ?? null;
-      let source = structure?.source ?? "";
+      // 1) Seitenaufbau: liegt das DESIGN des Beispiel-Exposés vor (im
+      // Datenbereich uebernommen), ist dessen Aufbau massgeblich - eine
+      // Vorlagenseite entspricht dann genau einem Abschnitt, mit so vielen
+      // Fotos, wie die Vorlage dort vorsieht. Die separate Struktur-Analyse
+      // entfaellt in dem Fall: der Aufbau IST der der Vorlage, nicht eine
+      // Zusammenfassung davon.
+      const layout = data.layouts[activeType];
+      const useLayout = !!layout && layout.pages.length > 0;
+      let sections = useLayout ? sectionsFromLayout(layout) : structure?.sections ?? null;
+      let source = useLayout ? layout.source : structure?.source ?? "";
       if (!sections) {
         setProgress({ phase: "struktur", done: 0, total: 1 });
         sections = await extractStructure();
@@ -610,14 +638,28 @@ export function KiExposePage() {
         headline: textRes.texts[i]?.headline ?? "",
         text: textRes.texts[i]?.text ?? "",
       }));
-      // Logo-Badge auf der Titelseite liegt direkt auf dem Foto - dafuer
-      // eine weiss/transparent aufbereitete Version des Logos verwenden,
-      // damit es ohne eigene Hintergrundflaeche freigestellt erscheint.
-      const heroLogo = data.logo
-        ? { ...data.logo, mime: "image/png", dataUrl: await invertLogoToWhite(data.logo.dataUrl) }
-        : null;
-      const pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo, energieausweisImages);
-      const boilerplateSection = await buildBoilerplateSection(data.api, data.boilerplate, data.logo);
+      // Mit uebernommenem Design: Farben, Formen, Schriftgroessen und die
+      // Anordnung der Text-/Fotoflaechen kommen 1:1 aus dem Beispiel-Exposé,
+      // eingesetzt werden nur die neuen Fotos und die neuen Texte.
+      // Ohne Design-Uebernahme bleibt es beim fest hinterlegten Luxus-Design.
+      let pages: Page[];
+      if (useLayout) {
+        pages = buildLayoutPages(layout, inputs, data.logo, overflowPhotos, energieausweisImages);
+      } else {
+        // Logo-Badge auf der Titelseite liegt direkt auf dem Foto - dafuer
+        // eine weiss/transparent aufbereitete Version des Logos verwenden,
+        // damit es ohne eigene Hintergrundflaeche freigestellt erscheint.
+        const heroLogo = data.logo
+          ? { ...data.logo, mime: "image/png", dataUrl: await invertLogoToWhite(data.logo.dataUrl) }
+          : null;
+        pages = buildLuxuryPages(activeType, inputs, data.logo, overflowPhotos, heroLogo, energieausweisImages);
+      }
+      const boilerplateSection = await buildBoilerplateSection(
+        data.api,
+        data.boilerplate,
+        data.logo,
+        useLayout ? layout : null,
+      );
       const allPages = [...pages, ...boilerplateSection];
       addPageNumbers(allPages);
 
@@ -848,9 +890,36 @@ export function KiExposePage() {
             </span>
             <div>
               <div className="num">SCHRITT 2</div>
-              <h2>Seitenaufbau</h2>
+              <h2>Design & Seitenaufbau</h2>
             </div>
           </div>
+          {activeLayout ? (
+            <>
+              <p className="section-desc">
+                Das Design Ihres Beispiel-Exposés wird vollständig übernommen: Farben, Formen,
+                Schriftgrößen und die Anordnung der Text- und Fotoflächen. Eingesetzt werden
+                ausschließlich die neuen Fotos und die neu geschriebenen Texte.
+              </p>
+              <div className="lp-current">
+                <span className="badge badge-ok">
+                  <IconCheck size={13} /> Design aus „{activeLayout.source}"
+                </span>
+                <span className="lp-current-text">
+                  {activeLayout.pages.length} Seite(n):{" "}
+                  {activeLayout.pages
+                    .slice()
+                    .sort((a, b) => a.order - b.order)
+                    .map((p) => p.title)
+                    .join(", ")}
+                </span>
+              </div>
+              <div className="hint" style={{ marginTop: 8 }}>
+                Im <a href="#/data">Datenbereich</a> lässt sich das übernommene Design verwerfen –
+                dann wird wieder das hinterlegte Luxus-Design verwendet.
+              </div>
+            </>
+          ) : (
+            <>
           <p className="section-desc">
             Wird einmalig aus Ihren Beispiel-Exposés im Datenbereich abgeleitet (nur Reihenfolge/
             Zweck der Seiten, keine Farben oder Grafiken) und danach für „{TYPE_LABEL[activeType]}"
@@ -879,6 +948,8 @@ export function KiExposePage() {
               Wird beim ersten „Exposé generieren" automatisch erstellt (Datenbereich-Beispiel
               erforderlich).
             </div>
+          )}
+            </>
           )}
         </section>
 
