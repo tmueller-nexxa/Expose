@@ -168,6 +168,32 @@ export function fitTextBoxWidth(
   return Math.min(maxLineW, maxPx) / REF_W;
 }
 
+// Ermittelt die Schriftgroesse, bei der ein Text GENAU die vorgegebene Breite
+// ausfuellt (einzeilig gesetzt) - Gegenstueck zu fitTextBoxWidth(), das bei
+// gegebener Schriftgroesse die Breite liefert.
+//
+// Textbreite waechst linear mit der Schriftgroesse, darum genuegt EINE Messung
+// bei einer Referenzgroesse und eine Dreisatz-Rechnung, statt Groessen
+// durchzuprobieren. Bei mehrzeiligem Text (manuelle Umbrueche) zaehlt die
+// laengste Zeile, damit auch sie noch in die Breite passt.
+export function fitFontSizeForWidth(
+  text: string,
+  targetWFrac: number,
+  weight = 400,
+  fontFamily?: string,
+): number {
+  const REF_FONT = 100;
+  const c = measureCtx();
+  c.font = `${weight} ${REF_FONT}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
+  let widest = 0;
+  for (const line of text.split("\n")) {
+    const w = c.measureText(line).width;
+    if (w > widest) widest = w;
+  }
+  if (widest <= 0) return REF_FONT;
+  return ((targetWFrac * REF_W) / widest) * REF_FONT;
+}
+
 // Abstand der Schrift-GRUNDLINIE der ersten Zeile von der OBERKANTE eines
 // Textfelds, als Anteil der Referenz-Seitenhoehe. Ein Textfeld rendert seinen
 // Text immer oben beginnend (siehe CanvasElement.tsx), die Grundlinie liegt

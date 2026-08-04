@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import { uid } from "./util";
 import {
+  fitFontSizeForWidth,
   fitTextBoxHeight,
   splitTextToFitLines,
   textBaselineOffsetFrac,
@@ -73,9 +74,23 @@ function heading(
     maxH: number;
   }> = {},
 ): PageElement {
-  const maxFontSize = opts.fontSize ?? Math.round(30 * SCRIPT_SCALE);
-  const minFontSize = Math.max(16, Math.round(maxFontSize * 0.55));
+  // Die Ueberschrift soll die volle BREITE ihrer Hintergrundbox einnehmen -
+  // Ausgangspunkt ist darum nicht mehr eine feste Wunschgroesse, sondern
+  // genau die Groesse, bei der der Text die Boxbreite ausfuellt. opts.fontSize
+  // dient nur noch als Bezug fuer die Untergrenze (siehe minFontSize), damit
+  // sehr lange Ueberschriften nicht beliebig klein werden.
+  const baseFontSize = opts.fontSize ?? Math.round(30 * SCRIPT_SCALE);
+  const minFontSize = Math.max(16, Math.round(baseFontSize * 0.55));
   const budgetH = opts.maxH ?? h * 2.2;
+  // Nach oben begrenzt das Hoehenbudget: eine kurze Ueberschrift ("Vorwort")
+  // muesste sonst absurd gross werden, um eine seitenbreite Box zu fuellen,
+  // und wuerde den darunterliegenden Inhalt verdraengen. Der Wert entspricht
+  // der groessten einzeiligen Schrift, die noch ins Budget passt (gleiche
+  // Zeilenhoehe wie in fitTextBoxHeight fuer die Schwungschrift).
+  const SCRIPT_LINE_HEIGHT = 1.7;
+  const heightCap = Math.floor((budgetH * REF_H) / SCRIPT_LINE_HEIGHT);
+  const widthFill = Math.round(fitFontSizeForWidth(text, w, 700, SERIF));
+  const maxFontSize = Math.max(minFontSize, Math.min(widthFill, heightCap));
   // Schriftgroesse an die verfuegbare Flaeche anpassen (schrumpft bei langen
   // Ueberschriften), statt immer die volle Groesse zu nutzen und die Box
   // beliebig wachsen zu lassen - das wuerde sonst bei mehrzeiligen
@@ -482,7 +497,7 @@ function twoColPage(title: string, text: string, photos: string[], photoLeft: bo
 
   const headingEl = heading(title, textX, 0.165, textW, 0.09, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
-    maxH: 0.16,
+    maxH: 0.24,
   });
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const bodyEl = body(text, textX, bodyTop, textW, Math.max(0.1, CONTENT_BOTTOM - 0.02 - bodyTop), {
@@ -504,7 +519,7 @@ function stackedPage(title: string, text: string, photos: string[]): Page {
 
   const headingEl = heading(title, MARGIN, 0.165, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
-    maxH: 0.14,
+    maxH: 0.24,
   });
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, 0.14, { maxH: 0.62 - bodyTop });
@@ -560,7 +575,7 @@ function galeriePage(title: string, photos: string[]): Page {
 
   const headingEl = heading(title, MARGIN, 0.165, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
-    maxH: 0.14,
+    maxH: 0.24,
   });
   const photoTop = headingEl.y + headingEl.h + 0.03;
 
@@ -584,7 +599,7 @@ function eckdatenPage(title: string, text: string): Page {
 
   const headingEl = heading(title, MARGIN, 0.13, CONTENT_W, 0.08, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
-    maxH: 0.12,
+    maxH: 0.24,
   });
   const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const bodyEl = body(text, MARGIN, bodyTop, CONTENT_W, Math.max(0.2, CONTENT_BOTTOM - bodyTop), {
@@ -611,7 +626,7 @@ function kontaktPage(logo: StoredFile | null, photos: string[]): Page {
   const headingEl = heading("Ihr Ansprechpartner", 0.1, 0.35, 0.8, 0.08, {
     fontSize: Math.round(27 * SCRIPT_SCALE),
     align: "center",
-    maxH: 0.14,
+    maxH: 0.2,
   });
   const detailsEl: PageElement = {
     id: uid("el"),
@@ -648,7 +663,7 @@ function documentPage(title: string, img: string): Page {
 
   const headingEl = heading(title, MARGIN, 0.09, CONTENT_W, 0.07, {
     fontSize: Math.round(25 * SCRIPT_SCALE),
-    maxH: 0.14,
+    maxH: 0.2,
   });
   const photoTop = headingEl.y + headingEl.h + 0.03;
 
@@ -683,15 +698,20 @@ function legalTextPages(title: string, text: string): Page[] {
   const result: Page[] = [];
   let remaining = text.trim();
   let part = 1;
-  const bodyTop = 0.2;
   const bodyWpx = CONTENT_W * REF_W;
   while (remaining) {
     const pageTitle = part === 1 ? title : `${title} (Fortsetzung)`;
     const els: PageElement[] = [];
+    // Grosszuegiges Hoehenbudget, damit auch KURZE Titel ("Vorwort",
+    // "Impressum") gross genug werden, um die seitenbreite Box auszufuellen -
+    // mit dem frueheren engen Budget blieben sie bei rund einem Viertel der
+    // Breite stehen. Der Fliesstext beginnt darum nicht mehr bei einem festen
+    // Wert, sondern direkt unter der (nun unterschiedlich hohen) Ueberschrift.
     const headingEl = heading(pageTitle, MARGIN, 0.09, CONTENT_W, 0.07, {
       fontSize: Math.round(22 * SCRIPT_SCALE),
-      maxH: 0.11,
+      maxH: 0.3,
     });
+    const bodyTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
     const maxLines = Math.max(
       4,
       Math.floor(((CONTENT_BOTTOM - bodyTop) * REF_H) / (LEGAL_FONT_SIZE * LEGAL_LINE_HEIGHT)),
@@ -747,7 +767,7 @@ function ansprechpartnerPage(
   const els: PageElement[] = [];
   const headingEl = heading("Ihr Ansprechpartner", MARGIN, 0.09, CONTENT_W, 0.09, {
     fontSize: Math.round(27 * SCRIPT_SCALE),
-    maxH: 0.14,
+    maxH: 0.2,
   });
   const textTop = headingEl.y + headingEl.h + TEXT_PANEL_GAP;
   const textW = images.length > 0 ? 0.42 : CONTENT_W;
