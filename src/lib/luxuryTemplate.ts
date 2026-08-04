@@ -89,7 +89,10 @@ function heading(
   // Zeilenhoehe wie in fitTextBoxHeight fuer die Schwungschrift).
   const SCRIPT_LINE_HEIGHT = 1.7;
   const heightCap = Math.floor((budgetH * REF_H) / SCRIPT_LINE_HEIGHT);
-  const widthFill = Math.round(fitFontSizeForWidth(text, w, 700, SERIF));
+  // Abgerundet, nicht gerundet: eine um einen halben Punkt AUFgerundete
+  // Groesse macht den Text minimal breiter als die Box - er bricht dann in
+  // eine zweite Zeile um, statt sie einzeilig auszufuellen.
+  const widthFill = Math.floor(fitFontSizeForWidth(text, w, 700, SERIF));
   const maxFontSize = Math.max(minFontSize, Math.min(widthFill, heightCap));
   // Schriftgroesse an die verfuegbare Flaeche anpassen (schrumpft bei langen
   // Ueberschriften), statt immer die volle Groesse zu nutzen und die Box

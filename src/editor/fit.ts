@@ -13,6 +13,50 @@ function measureCtx(): CanvasRenderingContext2D {
   return ctx as CanvasRenderingContext2D;
 }
 
+// Die Schwungschrift (Tangerine), in der alle Ueberschriften des
+// "KI Exposé"-Designs gesetzt werden - als CSS-Kurzform fuer die
+// Schriften-API. Bewusst nur Schnitt 700: nur der wird geladen (siehe
+// index.html), jeder andere Schnitt bliebe dauerhaft "nicht verfuegbar".
+const SCRIPT_FONT_SPEC = "700 100px Tangerine";
+
+let scriptFontPromise: Promise<void> | null = null;
+
+// Stellt sicher, dass die Schwungschrift WIRKLICH geladen ist, bevor mit ihr
+// gemessen wird.
+//
+// Hintergrund (gemessener Fehler, nicht Theorie): eine Schrift wird vom
+// Browser erst dann geholt, wenn sie zum Darstellen gebraucht wird -
+// canvas.measureText() loest KEIN Nachladen aus. Auf der Seite "KI Exposé"
+// kommt die Schwungschrift nirgends vor, sie ist beim Generieren also noch
+// gar nicht da. Die Messung fiel damit auf die Ersatzschrift (Georgia)
+// zurueck, die deutlich breiter laeuft als Tangerine - die daraus errechnete
+// Schriftgroesse war entsprechend zu klein, und die Ueberschriften fuellten
+// im fertigen Exposé nur rund 60% ihrer Hintergrundbox statt sie auszufuellen.
+//
+// Das Ergebnis wird gemerkt, damit nicht bei jedem Aufruf erneut gewartet
+// wird. Die Zeitgrenze verhindert, dass eine blockierte/fehlende Verbindung
+// zu Google Fonts die Generierung aufhaelt - dann wird eben mit der
+// Ersatzschrift gemessen, die in diesem Fall auch dargestellt wird.
+export function ensureScriptFontLoaded(timeoutMs = 5000): Promise<void> {
+  if (scriptFontPromise) return scriptFontPromise;
+  scriptFontPromise = (async () => {
+    try {
+      const fonts = document.fonts;
+      if (!fonts) return;
+      if (fonts.check(SCRIPT_FONT_SPEC)) return;
+      const timeout = new Promise<void>((r) => setTimeout(r, timeoutMs));
+      // Erst abwarten, bis der Browser die Schriftdefinitionen aus dem
+      // Stylesheet kennt - sonst laedt load() ins Leere (es gibt dann noch
+      // keine passende @font-face-Regel) und meldet trotzdem Erfolg.
+      await Promise.race([fonts.ready, timeout]);
+      await Promise.race([fonts.load(SCRIPT_FONT_SPEC).then(() => undefined), timeout]);
+    } catch {
+      /* Ohne Schriften-API bleibt es bei der Ersatzschrift. */
+    }
+  })();
+  return scriptFontPromise;
+}
+
 function wrapParagraphLines(
   paragraph: string,
   fontPx: number,

@@ -22,7 +22,12 @@ import { EXPOSE_FONTS, EXPOSE_LIGHT_GREY, EXPOSE_TEXT_COLORS } from "../lib/desi
 import { eraseRegionsFromImage } from "../lib/imageEdit";
 import { pdfFirstPageToImage } from "../lib/pdf";
 import { clamp, fileToDataUrl, uid } from "../lib/util";
-import { fitFontSize, fitTextBoxHeight, fitTextBoxWidth } from "../editor/fit";
+import {
+  ensureScriptFontLoaded,
+  fitFontSize,
+  fitTextBoxHeight,
+  fitTextBoxWidth,
+} from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
 import { PageCanvas } from "../editor/PageCanvas";
 import { startPointerDrag } from "../editor/pointer";
@@ -165,6 +170,10 @@ export function EditorPage() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Auch hier gilt: die Standardseiten werden im neuen Design aufgebaut
+      // und ihre Ueberschriften dafuer mit der Schwungschrift ausgemessen -
+      // die muss dafuer geladen sein (siehe ensureScriptFontLoaded).
+      await ensureScriptFontLoaded();
       const existing = await loadProject(exType);
       const layout = data.layouts[exType];
       const bp = data.boilerplate;

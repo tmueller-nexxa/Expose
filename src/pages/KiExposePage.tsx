@@ -35,6 +35,7 @@ import {
   type KiExposeSectionInput,
 } from "../lib/luxuryTemplate";
 import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
+import { ensureScriptFontLoaded } from "../editor/fit";
 import { saveProjectNow } from "../lib/storage";
 import { buildExposeName, fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { extractPdfText, renderPdfPages } from "../lib/pdf";
@@ -598,6 +599,11 @@ export function KiExposePage() {
 
       // 5) Luxus-Seiten bauen + Standardseiten (Impressum/AGB/…) anhängen.
       setProgress({ phase: "aufbau", done: 0, total: 1 });
+      // Vor dem Aufbau sicherstellen, dass die Schwungschrift wirklich da ist:
+      // die Ueberschriftengroessen werden mit ihr AUSGEMESSEN, und ohne sie
+      // faellt die Messung auf eine deutlich breitere Ersatzschrift zurueck -
+      // die Ueberschriften kaemen dann viel zu klein heraus.
+      await ensureScriptFontLoaded();
       const inputs: KiExposeSectionInput[] = sections.map((section, i) => ({
         section,
         photos: sectionPhotos[i].map((p) => p.src),
