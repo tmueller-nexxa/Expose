@@ -14,7 +14,12 @@
 // bleibt unveraendert stehen.
 
 import { REF_H, REF_W } from "../editor/constants";
-import { fitFontSize, fitTextBoxHeight, splitTextToFitLines } from "../editor/fit";
+import {
+  fitFontSize,
+  fitTextBoxHeight,
+  splitTextToFitLines,
+  textBaselineOffsetFrac,
+} from "../editor/fit";
 import { TEXT_LINE_HEIGHT } from "../editor/constants";
 import type { BoilerplateLuxuryInput, KiExposeSectionInput } from "./luxuryTemplate";
 import type {
@@ -285,6 +290,85 @@ export function buildLayoutPages(
   }
 
   return pages;
+}
+
+// --- Seitenzahlen im Design der Vorlage ----------------------------------
+//
+// Die Schwungschrift-Seitenzahl des fest hinterlegten Luxus-Designs (siehe
+// pageNumberMark() in luxuryTemplate.ts) passt nicht mehr, sobald das Exposé
+// im Design der Vorlage entsteht - sie waere der einzige Rest des alten
+// Designs. Stattdessen wird die Ziffer in der Typografie der Vorlage gesetzt:
+// deren Schriftfarbe, deren Schriftgroessenordnung, Standardschrift statt
+// Schwungschrift.
+//
+// Position unveraendert wie zuvor festgelegt: 5 mm vom rechten und vom
+// unteren Blattrand, gemessen an der rechten Textkante bzw. der Grundlinie.
+const PAGE_NUM_Z = 900;
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+const PAGE_NUM_MARGIN_MM = 5;
+const PAGE_NUM_EDGE_RIGHT = PAGE_NUM_MARGIN_MM / A4_WIDTH_MM;
+const PAGE_NUM_BASELINE_BOTTOM = PAGE_NUM_MARGIN_MM / A4_HEIGHT_MM;
+const PAGE_NUM_MIN_SIZE = 10;
+const PAGE_NUM_MAX_SIZE = 18;
+
+// Haeufigster Wert einer Liste - fuer Schriftfarbe/-groesse der Vorlage die
+// robustere Wahl als ein Mittelwert (ein einzelner Ausreisser, z.B. ein
+// weisses Label auf einem farbigen Banner, verschoebe den Mittelwert).
+function mostCommon<T>(values: T[]): T | undefined {
+  const counts = new Map<T, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best: T | undefined;
+  let bestCount = 0;
+  for (const [v, c] of counts) {
+    if (c > bestCount) {
+      best = v;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
+function pageNumberStyle(layout: StoredLayout): { color: string; fontSize: number } {
+  const texts = orderedPages(layout)
+    .flatMap((p) => p.elements)
+    .filter(isTextEl);
+  // Fliesstextfarbe der Vorlage: sie ist auf deren Seitenhintergrund
+  // garantiert lesbar - anders als z.B. eine Bannerfarbe.
+  const bodies = texts.filter((e) => e.kind === "text");
+  const color = mostCommon((bodies.length > 0 ? bodies : texts).map((e) => e.color)) ?? "#888888";
+  const size = mostCommon(bodies.map((e) => e.fontSize)) ?? 12;
+  return {
+    color,
+    fontSize: Math.min(PAGE_NUM_MAX_SIZE, Math.max(PAGE_NUM_MIN_SIZE, Math.round(size))),
+  };
+}
+
+export function addLayoutPageNumbers(pages: Page[], layout: StoredLayout): void {
+  const { color, fontSize } = pageNumberStyle(layout);
+  const w = 0.08;
+  const x = 1 - PAGE_NUM_EDGE_RIGHT - w;
+  // Ein Textfeld setzt seinen Text ab der OBERKANTE, der Abstand gilt aber
+  // fuer die GRUNDLINIE - darum den Grundlinienversatz zurueckrechnen.
+  const y = 1 - PAGE_NUM_BASELINE_BOTTOM - textBaselineOffsetFrac(fontSize, 700);
+  pages.forEach((p, i) => {
+    const text = String(i + 1);
+    p.elements.push({
+      id: uid("el"),
+      kind: "text",
+      x,
+      y,
+      w,
+      h: Math.min(fitTextBoxHeight(text, w, fontSize, 700), 1 - y),
+      z: PAGE_NUM_Z,
+      text,
+      fontSize,
+      align: "right",
+      color,
+      background: "rgba(0,0,0,0)",
+      fontWeight: 700,
+    });
+  });
 }
 
 // --- Standardseiten im Design der Vorlage --------------------------------

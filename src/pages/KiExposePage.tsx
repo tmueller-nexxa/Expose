@@ -36,6 +36,7 @@ import {
   type KiExposeSectionInput,
 } from "../lib/luxuryTemplate";
 import {
+  addLayoutPageNumbers,
   buildLayoutBoilerplatePages,
   buildLayoutPages,
   sectionsFromLayout,
@@ -661,7 +662,11 @@ export function KiExposePage() {
         useLayout ? layout : null,
       );
       const allPages = [...pages, ...boilerplateSection];
-      addPageNumbers(allPages);
+      // Im uebernommenen Design bekommt auch die Seitenzahl die Typografie der
+      // Vorlage - die Schwungschrift-Ziffer des Luxus-Designs waere dort der
+      // einzige verbliebene Rest des alten Designs.
+      if (useLayout) addLayoutPageNumbers(allPages, layout);
+      else addPageNumbers(allPages);
 
       // Exposé-Nummer vergeben und Namen daraus bilden. Die Nummer wird
       // ausschliesslich hochgezaehlt und nie wiederverwendet - auch nicht,
