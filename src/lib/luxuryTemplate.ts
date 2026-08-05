@@ -351,6 +351,39 @@ function image(x: number, y: number, w: number, h: number, src: string, fit: "co
 // Logos (siehe invertLogoToWhite() in imageEdit.ts), darum keine eigene
 // Hintergrundflaeche dahinter (die wuerde ein weisses Logo unsichtbar
 // machen) - das Logo liegt direkt auf dem Foto.
+// Kopfbalken der Titelseite: weisse, halbtransparente Flaeche ueber die
+// VOLLE Seitenbreite, hinter dem "Exposé"-Schriftzug und dem Logo. Genau so
+// im Beispiel-Exposé nachgemessen (Seite 1, gerendert bei 150 dpi):
+//   - Unterkante bei 0,156 der Seitenhoehe (dort wird die Seite auf 86 % der
+//     Breite schlagartig dunkler = Kante des Balkens)
+//   - durchgehend von x=0 bis x=1 (an sieben ueber die Breite verteilten
+//     Stellen geprueft)
+//   - Weiss mit rund 60 % Deckkraft (aus dem Helligkeitssprung ueber der
+//     Kante gegen das Foto darunter zurueckgerechnet: 0,613/0,609/0,607 je
+//     Farbkanal)
+// Der Balken sorgt dafuer, dass Schriftzug und Logo auf JEDEM Titelfoto
+// lesbar bleiben - unabhaengig davon, wie hell oder unruhig es oben ist.
+export const EXPOSE_BAR_HEIGHT = 0.156;
+export const EXPOSE_BAR_COLOR = "rgba(255, 255, 255, 0.6)";
+// Ebenen der Titelseiten-Kopfzeile: ueber dem Titelfoto (IMAGE_Z = 2),
+// Schriftzug zuoberst.
+export const EXPOSE_BAR_Z = 3;
+export const EXPOSE_LOGO_Z = 4;
+export const EXPOSE_MARK_Z = 5;
+
+function exposeHeaderBar(): PageElement {
+  return {
+    id: uid("el"),
+    kind: "shape",
+    x: 0,
+    y: 0,
+    w: 1,
+    h: EXPOSE_BAR_HEIGHT,
+    z: EXPOSE_BAR_Z,
+    color: EXPOSE_BAR_COLOR,
+  };
+}
+
 function heroLogoBadge(logo: StoredFile | null): PageElement[] {
   if (!logo) return [];
   // 200% Groesse (doppelte Breite/Hoehe ggue. dem urspruenglichen Badge) -
@@ -363,7 +396,16 @@ function heroLogoBadge(logo: StoredFile | null): PageElement[] {
   // laufenden Zaehlers z++ - der steht auf der allerersten Seite (fast immer
   // die Titelseite) noch bei 1 und wuerde das Logo sonst HINTER dem
   // Titelfoto einsortieren (unsichtbar).
-  const logoEl: LogoElement = { id: uid("el"), kind: "logo", x, y, w, h, z: 3, src: logo.dataUrl };
+  const logoEl: LogoElement = {
+    id: uid("el"),
+    kind: "logo",
+    x,
+    y,
+    w,
+    h,
+    z: EXPOSE_LOGO_Z,
+    src: logo.dataUrl,
+  };
   return [logoEl];
 }
 
@@ -381,7 +423,7 @@ function exposeMark(): PageElement {
     y: 0.035,
     w: 0.6,
     h: 0.16,
-    z: 4,
+    z: EXPOSE_MARK_Z,
     text: "Exposé",
     fontSize: 106,
     align: "left",
@@ -466,6 +508,7 @@ function titlePage(
   // zugeordnet wurde - eine Farbflaeche ist kein Drop-Ziel, ein leeres
   // image()-Element schon (siehe photoLayout()-Kommentar oben).
   els.push(image(0, 0, 1, heroH, photos[0] ?? ""));
+  els.push(exposeHeaderBar());
   els.push(exposeMark());
   els.push(...heroLogoBadge(logo));
 

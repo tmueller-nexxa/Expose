@@ -16,10 +16,12 @@
 import { REF_H, REF_W } from "../editor/constants";
 import {
   fitFontSize,
+  fitFontSizeForWidth,
   fitTextBoxHeight,
   splitTextToFitLines,
   textBaselineOffsetFrac,
 } from "../editor/fit";
+import { EXPOSE_BAR_COLOR, EXPOSE_BAR_HEIGHT } from "./luxuryTemplate";
 import { TEXT_LINE_HEIGHT } from "../editor/constants";
 import type { BoilerplateLuxuryInput, KiExposeSectionInput } from "./luxuryTemplate";
 import type {
@@ -238,14 +240,16 @@ export function buildLayoutPages(
   inputs.forEach((input, i) => {
     const design = designs[i];
     if (!design) return;
-    pages.push(
-      pageFromDesign(design, {
-        photos: input.photos,
-        headline: input.headline || input.section.title,
-        text: input.text,
-        logo,
-      }),
-    );
+    const built = pageFromDesign(design, {
+      photos: input.photos,
+      headline: input.headline || input.section.title,
+      text: input.text,
+      logo,
+    });
+    // Titelseite: Kopfzeile (Balken + "EXPOSÉ" + Logo) ist gesetzt und wird
+    // ergaenzt, falls die Erfassung der Vorlage sie nicht hergegeben hat.
+    if (i === 0) ensureExposeHeader(built, logo);
+    pages.push(built);
   });
 
   // Energieausweis: jede Seite einzeln, auf der bildstaerksten Vorlagenseite
@@ -290,6 +294,96 @@ export function buildLayoutPages(
   }
 
   return pages;
+}
+
+// --- Kopfzeile der Titelseite --------------------------------------------
+//
+// Jede Titelseite traegt oben den "Exposé"-Schriftzug und das Logo auf einem
+// weissen, halbtransparenten Balken ueber die volle Seitenbreite - so wie im
+// Beispiel-Exposé (dort nachgemessen, siehe EXPOSE_BAR_HEIGHT in
+// luxuryTemplate.ts). Wurde beim Einlesen der Vorlage bereits ein solcher
+// Balken/Schriftzug erfasst, bleibt er unangetastet; fehlt er, wird er
+// ergaenzt - er soll IMMER vorhanden sein.
+//
+// Masse aus der Vorlage (Anteile der Seite):
+//   Schriftzug: links 0,030, Breite 0,459, Grundlinie 0,147
+//   Logo:       rechte Kante 0,956, Breite 0,269, oben 0,015, Hoehe 0,119
+const HEADER_TEXT = "EXPOSÉ";
+const HEADER_TEXT_X = 0.03;
+const HEADER_TEXT_W = 0.4585;
+const HEADER_TEXT_BASELINE = 0.147;
+const HEADER_TEXT_WEIGHT = 800;
+const HEADER_LOGO_RIGHT = 0.956;
+const HEADER_LOGO_W = 0.269;
+const HEADER_LOGO_Y = 0.015;
+const HEADER_LOGO_H = 0.119;
+// Ebenen: sicher ueber allem, was aus der Vorlage kommt (Formen ab z 10,
+// Fotos auf der hintersten Ebene) - die Kopfzeile darf nie verdeckt werden.
+const HEADER_BAR_Z = 800;
+const HEADER_LOGO_Z = 801;
+const HEADER_MARK_Z = 802;
+
+function hasHeaderBar(page: Page): boolean {
+  return page.elements.some(
+    (e) => e.kind === "shape" && e.y <= 0.02 && e.w >= 0.9 && e.h >= 0.08,
+  );
+}
+
+export function ensureExposeHeader(page: Page, logo: StoredFile | null): void {
+  if (!hasHeaderBar(page)) {
+    page.elements.push({
+      id: uid("el"),
+      kind: "shape",
+      x: 0,
+      y: 0,
+      w: 1,
+      h: EXPOSE_BAR_HEIGHT,
+      z: HEADER_BAR_Z,
+      color: EXPOSE_BAR_COLOR,
+    });
+  }
+
+  const hasMark = page.elements.some(
+    (e) => isTextEl(e) && e.y < 0.2 && /expos/i.test(e.text),
+  );
+  if (!hasMark) {
+    const fontSize = Math.floor(
+      fitFontSizeForWidth(HEADER_TEXT, HEADER_TEXT_W, HEADER_TEXT_WEIGHT),
+    );
+    const y = HEADER_TEXT_BASELINE - textBaselineOffsetFrac(fontSize, HEADER_TEXT_WEIGHT);
+    page.elements.push({
+      id: uid("el"),
+      kind: "heading",
+      x: HEADER_TEXT_X,
+      y: Math.max(0, y),
+      w: HEADER_TEXT_W,
+      h: fitTextBoxHeight(HEADER_TEXT, HEADER_TEXT_W, fontSize, HEADER_TEXT_WEIGHT),
+      z: HEADER_MARK_Z,
+      text: HEADER_TEXT,
+      fontSize,
+      align: "left",
+      color: "#ffffff",
+      background: "rgba(0,0,0,0)",
+      fontWeight: HEADER_TEXT_WEIGHT,
+      // Weiss auf hellem Balken/Foto braucht die Abgrenzung, sonst
+      // verschwindet der Schriftzug ueber einem hellen Himmel.
+      textShadow: true,
+    });
+  }
+
+  const hasLogo = page.elements.some((e) => e.kind === "logo" && e.y < 0.2 && e.src);
+  if (!hasLogo && logo) {
+    page.elements.push({
+      id: uid("el"),
+      kind: "logo",
+      x: HEADER_LOGO_RIGHT - HEADER_LOGO_W,
+      y: HEADER_LOGO_Y,
+      w: HEADER_LOGO_W,
+      h: HEADER_LOGO_H,
+      z: HEADER_LOGO_Z,
+      src: logo.dataUrl,
+    });
+  }
 }
 
 // --- Seitenzahlen im Design der Vorlage ----------------------------------
