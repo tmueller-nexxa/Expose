@@ -1784,13 +1784,18 @@ const ADDRESS_TOOL = {
         description:
           "Strasse MIT Hausnummer, z.B. \"Am Waldberg 3\". Leerer String, falls im Text nicht enthalten.",
       },
+      zip: {
+        type: "string",
+        description:
+          "Postleitzahl des Objektorts, z.B. \"58509\". Leerer String, falls im Text nicht enthalten.",
+      },
       city: {
         type: "string",
         description:
           "Ort/Stadt OHNE Postleitzahl, z.B. \"Lüdenscheid\". Leerer String, falls im Text nicht enthalten.",
       },
     },
-    required: ["street", "city"],
+    required: ["street", "zip", "city"],
   },
 };
 
@@ -1800,6 +1805,7 @@ const MAX_ADDRESS_TEXT_CHARS = 12000;
 
 export interface ObjectAddress {
   street: string;
+  zip: string;
   city: string;
 }
 
@@ -1827,11 +1833,12 @@ export async function extractObjectAddress(
       ],
     });
     const tool = data.content.find((c) => c.type === "tool_use");
-    const input = tool?.input as { street?: string; city?: string } | undefined;
+    const input = tool?.input as { street?: string; zip?: string; city?: string } | undefined;
     const street = String(input?.street ?? "").trim().slice(0, 120);
+    const zip = String(input?.zip ?? "").trim().slice(0, 12);
     const city = String(input?.city ?? "").trim().slice(0, 80);
     if (!street && !city) return null;
-    return { street, city };
+    return { street, zip, city };
   } catch {
     return null;
   }

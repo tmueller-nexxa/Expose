@@ -153,6 +153,29 @@ export function splitTextToFitLines(
   return { fits: fitsWords, rest: restParagraphs.join("\n") };
 }
 
+// Breite des laengsten einzelnen WORTES. Ein Wort kann nicht umbrochen
+// werden - passt es nicht in die Breite, laeuft es aus der Flaeche heraus und
+// wird abgeschnitten, ohne dass die Zeilenzaehlung das je bemerken wuerde.
+// Typischer Fall: eine Internetadresse ("www.beispiel-immobilien.de") ist
+// EIN Wort und wurde darum in einer zu schmalen Flaeche abgeschnitten,
+// obwohl die Hoehenpruefung "passt" meldete.
+function longestWordWidth(
+  text: string,
+  fontPx: number,
+  weight: number,
+  fontFamily?: string,
+): number {
+  const c = measureCtx();
+  c.font = `${weight} ${fontPx}px ${fontFamily ?? "Inter, system-ui, sans-serif"}`;
+  let max = 0;
+  for (const word of text.split(/\s+/)) {
+    if (!word) continue;
+    const w = c.measureText(word).width;
+    if (w > max) max = w;
+  }
+  return max;
+}
+
 export function fitFontSize(
   text: string,
   boxW: number,
@@ -180,7 +203,14 @@ export function fitFontSize(
 
   for (let size = max; size >= min; size -= 1) {
     const lines = wrapLines(text, size, weight, innerW, opts.fontFamily);
-    if (lines * size * lineHeight <= innerH) return size;
+    // Hoehe UND Breite pruefen: die Zeilenzaehlung allein uebersieht ein
+    // einzelnes, nicht umbrechbares Wort, das breiter als die Flaeche ist.
+    if (
+      lines * size * lineHeight <= innerH &&
+      longestWordWidth(text, size, weight, opts.fontFamily) <= innerW
+    ) {
+      return size;
+    }
   }
   return min;
 }

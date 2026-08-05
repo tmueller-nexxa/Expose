@@ -184,6 +184,10 @@ export interface KiExposeStructure {
 export interface ExposeAddress {
   street: string; // Strasse + Hausnummer, z.B. "Am Waldberg 3"
   city: string; // Ort, z.B. "Lüdenscheid"
+  // Postleitzahl, z.B. "58509". Steht auf der Titelseite zusammen mit dem
+  // Ort in der zweiten Zeile des Adressfelds; fuer den Exposé-Namen wird sie
+  // bewusst NICHT verwendet.
+  zip?: string;
 }
 
 // Schlanker Katalogeintrag fuer die Uebersicht "Meine Exposés". Bewusst OHNE
@@ -210,6 +214,10 @@ export interface AppData {
   logo: StoredFile | null;
   // Titelbild / Objektfoto fuer Login- und Startseiten-Hero.
   cover: StoredFile | null;
+  // Eigene Internetadresse des Maklerbueros - erscheint auf der Titelseite
+  // im unteren der beiden goldenen Kaesten. Wird beim Einlesen einer Vorlage
+  // automatisch aus deren Impressum vorbelegt, bleibt aber aenderbar.
+  website: string;
   api: ApiSettings;
   // Pro Typ: aus den Beispielen uebernommene Seitenstruktur (oder null).
   layouts: Record<ExposeType, StoredLayout | null>;

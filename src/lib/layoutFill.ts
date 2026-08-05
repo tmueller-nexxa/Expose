@@ -27,6 +27,7 @@ import type { BoilerplateLuxuryInput, KiExposeSectionInput } from "./luxuryTempl
 import type {
   BoilerplateKind,
   DesignPage,
+  ExposeAddress,
   ExposeSection,
   ExposeSectionKind,
   Page,
@@ -233,6 +234,10 @@ export function buildLayoutPages(
   logo: StoredFile | null,
   overflowPhotos: string[] = [],
   energieausweisImages: string[] = [],
+  // Anschrift des Objekts und Internetadresse des Buueros - fuer die beiden
+  // festen Felder der Titelseite (siehe fillTitleFields).
+  address: ExposeAddress = { street: "", city: "" },
+  website = "",
 ): Page[] {
   const designs = orderedPages(layout);
   const pages: Page[] = [];
@@ -248,7 +253,10 @@ export function buildLayoutPages(
     });
     // Titelseite: Kopfzeile (Balken + "EXPOSÉ" + Logo) ist gesetzt und wird
     // ergaenzt, falls die Erfassung der Vorlage sie nicht hergegeben hat.
-    if (i === 0) ensureExposeHeader(built, logo);
+    if (i === 0) {
+      ensureExposeHeader(built, logo);
+      fillTitleFields(built, layout, address, website);
+    }
     pages.push(built);
   });
 
@@ -383,6 +391,123 @@ export function ensureExposeHeader(page: Page, logo: StoredFile | null): void {
       z: HEADER_LOGO_Z,
       src: logo.dataUrl,
     });
+  }
+}
+
+// --- Adresse und Internetadresse auf der Titelseite ----------------------
+//
+// Die Titelseite der Vorlage traegt unten zwei goldene Felder: im oberen die
+// Anschrift des Objekts (Strasse mit Hausnummer, darunter PLZ und Ort), im
+// unteren die Internetadresse des Buueros. Beide gehoeren zum festen Aufbau
+// und werden IMMER gefuellt.
+//
+// Beim Einlesen der Vorlage wird Text, der auf einer Farbflaeche liegt,
+// wortgetreu uebernommen (er gilt dort als Rubriklabel) - in diesen beiden
+// Feldern stand danach also noch die Anschrift des BEISPIEL-Objekts. Genau
+// die wird hier durch die des neuen Objekts ersetzt.
+//
+// Masse aus der Vorlage (Seite 1 bei 150 dpi vermessen), falls die Felder
+// ergaenzt werden muessen:
+//   Adressfeld:  x 0, y 0,7413, Breite 0,4819, Hoehe 0,0746
+//   Web-Feld:    x 0, y 0,8712, Breite 0,4819, Hoehe 0,0581
+//   Text jeweils ab x 0,0234; Goldton der Vorlage #bc9c22
+const ADDRESS_BOX = { x: 0, y: 0.7413, w: 0.4819, h: 0.0746 };
+const WEBSITE_BOX = { x: 0, y: 0.8712, w: 0.4819, h: 0.0581 };
+const TITLE_FIELD_TEXT_X = 0.0234;
+const TITLE_FIELD_FONT_SIZE = 22;
+const TITLE_FIELD_INK = "#1a1a1a";
+const FALLBACK_GOLD = "#bc9c22";
+const TITLE_FIELD_Z = 810;
+
+// Deutsche Postleitzahl + Ort - das zuverlaessigste Merkmal fuer ein
+// Adressfeld (und in einem Titelseiten-Label sonst nirgends zu erwarten).
+const ADDRESS_RE = /\b\d{5}\b\s+\p{L}/u;
+const URL_RE = /(?:https?:\/\/|www\.)\S+\.\p{L}{2,}/u;
+
+function formatAddress(address: ExposeAddress): string {
+  const line2 = [address.zip?.trim(), address.city.trim()].filter(Boolean).join(" ");
+  return [address.street.trim(), line2].filter(Boolean).join("\n");
+}
+
+// Haeufigste Farbe der Formflaechen einer Vorlage - dient als Farbe fuer ein
+// nachtraeglich ergaenztes Feld, damit es zum Design passt.
+function accentColor(layout: StoredLayout): string {
+  const colors = orderedPages(layout)
+    .flatMap((p) => p.elements)
+    .filter((e) => e.kind === "shape" && e.w < 0.95)
+    .map((e) => (e as { color: string }).color);
+  return mostCommon(colors) ?? FALLBACK_GOLD;
+}
+
+function addTitleField(
+  page: Page,
+  box: { x: number; y: number; w: number; h: number },
+  text: string,
+  color: string,
+): void {
+  page.elements.push({
+    id: uid("el"),
+    kind: "shape",
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
+    z: TITLE_FIELD_Z,
+    color,
+  });
+  const textW = box.w - TITLE_FIELD_TEXT_X * 2;
+  const fontSize = fitFontSize(text, textW * REF_W, box.h * 0.8 * REF_H, {
+    max: TITLE_FIELD_FONT_SIZE,
+    min: 11,
+    weight: 700,
+  });
+  const h = fitTextBoxHeight(text, textW, fontSize, 700);
+  page.elements.push({
+    id: uid("el"),
+    kind: "text",
+    x: box.x + TITLE_FIELD_TEXT_X,
+    y: box.y + Math.max(0, (box.h - h) / 2),
+    w: textW,
+    h,
+    z: TITLE_FIELD_Z + 1,
+    text,
+    fontSize,
+    align: "left",
+    color: TITLE_FIELD_INK,
+    background: "rgba(0,0,0,0)",
+    fontWeight: 700,
+  });
+}
+
+export function fillTitleFields(
+  page: Page,
+  layout: StoredLayout,
+  address: ExposeAddress,
+  website: string,
+): void {
+  const addressText = formatAddress(address);
+  const site = website.trim();
+
+  // 1) Anschrift: das aus der Vorlage uebernommene Adressfeld weiterverwenden
+  // (dort stimmen Position, Schriftgroesse und Farbe bereits) und nur seinen
+  // Inhalt austauschen.
+  const addressSlot = page.elements.find(
+    (e): e is TextElement => isTextEl(e) && ADDRESS_RE.test(e.text),
+  );
+  if (addressText) {
+    if (addressSlot) fillTextElement(addressSlot, addressText);
+    else addTitleField(page, ADDRESS_BOX, addressText, accentColor(layout));
+  }
+
+  // 2) Internetadresse: die der Vorlage steht bereits richtig - sie wird nur
+  // ersetzt, wenn im Datenbereich eine eigene hinterlegt ist.
+  const siteSlot = page.elements.find(
+    (e): e is TextElement => isTextEl(e) && e !== addressSlot && URL_RE.test(e.text),
+  );
+  if (siteSlot) {
+    if (site) fillTextElement(siteSlot, site);
+  } else if (site) {
+    addTitleField(page, WEBSITE_BOX, site, accentColor(layout));
   }
 }
 

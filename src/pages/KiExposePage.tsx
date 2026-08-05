@@ -633,6 +633,12 @@ export function KiExposePage() {
       // faellt die Messung auf eine deutlich breitere Ersatzschrift zurueck -
       // die Ueberschriften kaemen dann viel zu klein heraus.
       await ensureScriptFontLoaded();
+      // Anschrift des Objekts (Eingabefelder oben auf dieser Seite) - fliesst
+      // sowohl in die beiden festen Felder der Titelseite als auch weiter
+      // unten in den Namen des gespeicherten Exposés ein.
+      const street = address.street.trim();
+      const zip = (address.zip ?? "").trim();
+      const city = address.city.trim();
       const inputs: KiExposeSectionInput[] = sections.map((section, i) => ({
         section,
         photos: sectionPhotos[i].map((p) => p.src),
@@ -645,7 +651,15 @@ export function KiExposePage() {
       // Ohne Design-Uebernahme bleibt es beim fest hinterlegten Luxus-Design.
       let pages: Page[];
       if (useLayout) {
-        pages = buildLayoutPages(layout, inputs, data.logo, overflowPhotos, energieausweisImages);
+        pages = buildLayoutPages(
+          layout,
+          inputs,
+          data.logo,
+          overflowPhotos,
+          energieausweisImages,
+          { street, zip, city },
+          data.website,
+        );
       } else {
         // Logo-Badge auf der Titelseite liegt direkt auf dem Foto - dafuer
         // eine weiss/transparent aufbereitete Version des Logos verwenden,
@@ -672,8 +686,6 @@ export function KiExposePage() {
       // ausschliesslich hochgezaehlt und nie wiederverwendet - auch nicht,
       // wenn ein Exposé spaeter geloescht wird (siehe AppData.exposeCounter).
       const exposeNo = data.exposeCounter + 1;
-      const street = address.street.trim();
-      const city = address.city.trim();
       const name =
         street || city
           ? buildExposeName(exposeNo, street, city)
@@ -690,7 +702,7 @@ export function KiExposePage() {
         builtFrom: `ki-expose:${now}`,
         exposeNo,
         name,
-        address: { street, city },
+        address: { street, zip, city },
         createdAt: now,
       };
       // Legt das Exposé zugleich im Archiv ab (exposeNo ist gesetzt) - es ist
@@ -827,6 +839,15 @@ export function KiExposePage() {
                   value={address.street}
                   placeholder="Am Waldberg 3"
                   onChange={(e) => setAddress({ street: e.target.value })}
+                />
+              </label>
+              <label className="ki-address-zip">
+                PLZ
+                <input
+                  type="text"
+                  value={address.zip ?? ""}
+                  placeholder="58509"
+                  onChange={(e) => setAddress({ zip: e.target.value })}
                 />
               </label>
               <label>

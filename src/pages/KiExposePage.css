@@ -43,6 +43,10 @@
   font-weight: 600;
   flex: 1 1 220px;
 }
+/* Die Postleitzahl braucht deutlich weniger Platz als Strasse und Ort. */
+.ki-address-fields .ki-address-zip {
+  flex: 0 1 110px;
+}
 .ki-address-fields input {
   font: inherit;
   font-weight: 400;

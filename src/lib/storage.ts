@@ -159,6 +159,7 @@ export function emptyAppData(): AppData {
     styleTexts: [],
     logo: null,
     cover: null,
+    website: "",
     api: {
       provider: "anthropic",
       apiKey: "",
@@ -214,6 +215,7 @@ function mergeAppData(stored: AppData): AppData {
       ...stored.kiExposeStructurePrevious,
     },
     kiExposeAddress: { ...base.kiExposeAddress, ...stored.kiExposeAddress },
+    website: stored.website ?? base.website,
     // Aeltere Datenstaende kennen den Zaehler noch nicht - dann bei 0 starten.
     exposeCounter: stored.exposeCounter ?? base.exposeCounter,
   };

@@ -38,6 +38,21 @@ import {
 } from "../components/Icons";
 import "./DataPage.css";
 
+// Sucht die Internetadresse des Buueros im Text der Vorlage (Impressum/
+// Kontaktseite). Bewusst eng: nur "www."-Adressen oder http(s)-Links, keine
+// E-Mail-Adressen - und Portale/Plattformen, die in Exposé-Texten regelmaessig
+// vorkommen (Kartendienste, Immobilienportale), werden uebersprungen, damit
+// nicht deren Adresse auf der Titelseite landet.
+const WEBSITE_RE = /\b(?:https?:\/\/)?(www\.[a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b/gi;
+const WEBSITE_BLOCKLIST = /google|maps|immobilienscout|immowelt|facebook|instagram|youtube|linkedin|openstreetmap/i;
+function findWebsite(text: string): string | null {
+  for (const m of text.matchAll(WEBSITE_RE)) {
+    const url = m[1];
+    if (!WEBSITE_BLOCKLIST.test(url)) return url.toLowerCase();
+  }
+  return null;
+}
+
 export function DataPage() {
   const { data, updateData } = useApp();
   const [activeType, setActiveType] = useState<ExposeType>("einfamilienhaus");
@@ -362,6 +377,19 @@ export function DataPage() {
         } catch {
           /* Fotoerkennung fehlgeschlagen - die Seite entsteht dann ohne Fotos, der Text bleibt erhalten. */
         }
+      }
+
+      // Internetadresse des Buueros aus dem Text der Vorlage vorbelegen - sie
+      // erscheint auf der Titelseite im unteren goldenen Feld. Gesucht wird im
+      // Text ALLER Seiten: im Beispiel steht sie auf der Titelseite selbst,
+      // nicht im Impressum. Eine bereits eingetragene Adresse wird NICHT
+      // ueberschrieben.
+      const foundWebsite = findWebsite(pages.map((p) => p.text ?? "").join("\n"));
+      if (foundWebsite) {
+        updateData((prev) => ({
+          ...prev,
+          website: prev.website.trim() ? prev.website : foundWebsite,
+        }));
       }
 
       // Standardseiten global speichern (gelten fuer alle Expose-Typen).
@@ -752,6 +780,20 @@ export function DataPage() {
                 </button>
               </div>
             )}
+
+            <div className="divider" />
+            <h3 style={{ fontSize: 15, marginBottom: 4 }}>Internetadresse</h3>
+            <p className="section-desc" style={{ marginLeft: 0 }}>
+              Erscheint auf der Titelseite im unteren goldenen Feld. Wird beim Einlesen einer
+              Vorlage automatisch aus deren Impressum übernommen.
+            </p>
+            <input
+              type="text"
+              className="input"
+              value={data.website}
+              placeholder="www.ihre-domain.de"
+              onChange={(e) => updateData((p) => ({ ...p, website: e.target.value }))}
+            />
 
             <div className="divider" />
             <h3 style={{ fontSize: 15, marginBottom: 4 }}>Titelbild (Objektfoto)</h3>
