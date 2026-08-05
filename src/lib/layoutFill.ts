@@ -22,6 +22,7 @@ import {
   textBaselineOffsetFrac,
 } from "../editor/fit";
 import { EXPOSE_BAR_COLOR, EXPOSE_BAR_HEIGHT } from "./luxuryTemplate";
+import type { TitleHighlight } from "./ai";
 import { TEXT_LINE_HEIGHT } from "../editor/constants";
 import type { BoilerplateLuxuryInput, KiExposeSectionInput } from "./luxuryTemplate";
 import type {
@@ -238,6 +239,8 @@ export function buildLayoutPages(
   // festen Felder der Titelseite (siehe fillTitleFields).
   address: ExposeAddress = { street: "", city: "" },
   website = "",
+  // Die drei neu geschriebenen Argumente-Bloecke der Titelseite.
+  titleHighlights: TitleHighlight[] = [],
 ): Page[] {
   const designs = orderedPages(layout);
   const pages: Page[] = [];
@@ -254,8 +257,13 @@ export function buildLayoutPages(
     // Titelseite: Kopfzeile (Balken + "EXPOSÉ" + Logo) ist gesetzt und wird
     // ergaenzt, falls die Erfassung der Vorlage sie nicht hergegeben hat.
     if (i === 0) {
+      // Vor dem Befuellen festhalten, welche Textfelder ihren Inhalt schon aus
+      // der Vorlage mitbrachten - pageFromDesign() uebernimmt die Elemente in
+      // unveraenderter Reihenfolge, die Zuordnung ueber den Index stimmt also.
+      const fromTemplate = design.elements.map((e) => isTextEl(e) && !!e.text.trim());
       ensureExposeHeader(built, logo);
       fillTitleFields(built, layout, address, website);
+      fillTitleHighlights(built, titleHighlights, fromTemplate);
     }
     pages.push(built);
   });
@@ -509,6 +517,92 @@ export function fillTitleFields(
   } else if (site) {
     addTitleField(page, WEBSITE_BOX, site, accentColor(layout));
   }
+}
+
+// --- Titelseite: die drei Argumente-Bloecke ------------------------------
+//
+// Die Titelseite der Vorlage traegt drei Bloecke aus je einer Schlagzeile
+// ("ECHT.SOLIDE.WERTIGES ZUHAUSE.") und zwei bis drei Zeilen Text. Sie liegen
+// auf einer Flaeche und wurden beim Einlesen deshalb WORTGETREU uebernommen -
+// dort steht also noch das, was zum Beispielobjekt gehoert. Hier wird der
+// Inhalt gegen die neu geschriebenen Bloecke getauscht (siehe
+// writeTitleHighlights() in ai.ts), waehrend Position, Schriftgroesse,
+// Farbe und Ausrichtung der Vorlage erhalten bleiben.
+
+// Schlagzeile im Stil der Vorlage: Grossbuchstaben, mit Punkten verbunden,
+// mit Punkt abgeschlossen. Der Objekttyp im Banner ("EINFAMILIENHAUS") faellt
+// bewusst NICHT darunter - er hat keinen Schlusspunkt.
+const HIGHLIGHT_HEAD_RE = /^[\p{Lu}\d][\p{Lu}\d\s.\-–&]{3,}\.$/u;
+
+function isHighlightHead(el: TextElement): boolean {
+  const t = el.text.trim();
+  return t.includes(".") && HIGHLIGHT_HEAD_RE.test(t);
+}
+
+// Liefert die Bloecke der Vorlage als Tonfall-Vorbild fuer die Textgenerierung.
+export function titleHighlightSample(layout: StoredLayout): string {
+  const title = orderedPages(layout)[0];
+  if (!title) return "";
+  const texts = readingOrder(title.elements.filter(isTextEl).filter((e) => e.text.trim()));
+  const out: string[] = [];
+  for (let i = 0; i < texts.length; i++) {
+    if (!isHighlightHead(texts[i])) continue;
+    const body = texts[i + 1] && !isHighlightHead(texts[i + 1]) ? texts[i + 1].text.trim() : "";
+    out.push(body ? `${texts[i].text.trim()}\n${body}` : texts[i].text.trim());
+  }
+  return out.slice(0, 3).join("\n\n");
+}
+
+// Der Textblock einer Schlagzeile steht DIREKT DARUNTER in derselben Spalte.
+// Nur "das naechste Feld in Leserichtung" zu nehmen genuegt nicht: auf der
+// Titelseite liegen die goldenen Felder (Anschrift, Internetadresse) auf
+// nahezu gleicher Hoehe links daneben und wuerden sonst mitgefuellt -
+// gemessen an der Vorlage liegt das Web-Feld bei y 0,891, der dritte
+// Textblock bei y 0,887.
+function bodyForHeadline(head: TextElement, candidates: TextElement[]): TextElement | null {
+  let best: TextElement | null = null;
+  for (const el of candidates) {
+    if (el === head || el.y <= head.y) continue;
+    if (isHighlightHead(el)) continue;
+    // Nur Felder derselben Spalte: die waagerechten Bereiche muessen sich
+    // deutlich ueberlappen.
+    const overlap = Math.min(head.x + head.w, el.x + el.w) - Math.max(head.x, el.x);
+    if (overlap < Math.min(head.w, el.w) * 0.5) continue;
+    if (!best || el.y < best.y) best = el;
+  }
+  return best;
+}
+
+// fromTemplate: fuer jedes Element der Seite, ob es seinen Text SCHON in der
+// Vorlage hatte. Nur solche Felder gehoeren zu den Argumente-Bloecken - die
+// leeren Textflaechen der Vorlage nehmen den Abschnittstext auf und duerfen
+// nicht mit einem Block ueberschrieben werden (auf der Titelseite der Vorlage
+// liegt genau so eine leere Spalte direkt neben den Bloecken).
+export function fillTitleHighlights(
+  page: Page,
+  highlights: TitleHighlight[],
+  fromTemplate: boolean[],
+): void {
+  if (highlights.length === 0) return;
+  // Anschrift und Internetadresse haben ihre eigenen Felder (siehe
+  // fillTitleFields) und duerfen hier nicht ueberschrieben werden.
+  const candidates = readingOrder(
+    page.elements
+      .filter((_, i) => fromTemplate[i] ?? false)
+      .filter(isTextEl)
+      .filter((e) => !ADDRESS_RE.test(e.text) && !URL_RE.test(e.text)),
+  );
+  const heads = candidates.filter(isHighlightHead);
+  const taken = new Set<TextElement>();
+  heads.slice(0, highlights.length).forEach((head, i) => {
+    const h = highlights[i];
+    if (h.headline) fillTextElement(head, h.headline);
+    const bodyEl = bodyForHeadline(head, candidates.filter((c) => !taken.has(c)));
+    if (h.text && bodyEl) {
+      fillTextElement(bodyEl, h.text);
+      taken.add(bodyEl);
+    }
+  });
 }
 
 // --- Seitenzahlen im Design der Vorlage ----------------------------------

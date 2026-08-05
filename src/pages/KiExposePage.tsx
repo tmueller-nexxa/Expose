@@ -24,6 +24,7 @@ import {
   pickPriorityPhotos,
   transcribeBoilerplateText,
   writeExposeSectionTexts,
+  writeTitleHighlights,
 } from "../lib/ai";
 import { aiProxyUrl } from "../firebase.config";
 import { detectBoilerplate } from "../lib/boilerplate";
@@ -40,6 +41,7 @@ import {
   buildLayoutBoilerplatePages,
   buildLayoutPages,
   sectionsFromLayout,
+  titleHighlightSample,
 } from "../lib/layoutFill";
 import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { ensureScriptFontLoaded } from "../editor/fit";
@@ -651,6 +653,18 @@ export function KiExposePage() {
       // Ohne Design-Uebernahme bleibt es beim fest hinterlegten Luxus-Design.
       let pages: Page[];
       if (useLayout) {
+        // Die drei Argumente-Bloecke der Titelseite neu schreiben - im Stil
+        // der Vorlage, aber mit den Zahlen des neuen Objekts und passend zu
+        // den Fotos, die tatsaechlich verwendet werden.
+        const usedCaptions = sectionPhotos.flat().map((p) => p.caption);
+        const titleHighlights = await writeTitleHighlights(
+          data.api,
+          activeType,
+          datasheetText,
+          usedCaptions,
+          titleHighlightSample(layout),
+          data.styleTexts,
+        );
         pages = buildLayoutPages(
           layout,
           inputs,
@@ -659,6 +673,7 @@ export function KiExposePage() {
           energieausweisImages,
           { street, zip, city },
           data.website,
+          titleHighlights,
         );
       } else {
         // Logo-Badge auf der Titelseite liegt direkt auf dem Foto - dafuer

@@ -1763,6 +1763,121 @@ export async function writeExposeSectionTexts(
   return { ok: true, texts: allTexts };
 }
 
+// --- Titelseite: die drei Argumente-Bloecke -------------------------------
+//
+// Die Titelseite traegt neben dem Foto drei kurze Bloecke aus je einer
+// Schlagzeile und zwei bis drei Zeilen Text. Aufbau und Tonfall sind im
+// Beispiel-Exposé unverwechselbar (Seite 1 der Vorlage, ausgelesen):
+//
+//   ECHT.SOLIDE.WERTIGES ZUHAUSE.
+//   108 m² Wohnflaeche auf 762 m² ruhig gelegenem Erbbaugrundstueck.
+//   Massivbauweise, die Bestaendigkeit und Substanz vereint.
+//
+// Also: Schlagzeile aus Schlagworten in GROSSBUCHSTABEN, mit Punkten
+// verbunden und mit Punkt abgeschlossen; darunter ein kurzer, faktenreicher
+// Text. Die drei Bloecke beleuchten drei verschiedene Blickwinkel
+// (Substanz/Wert - Wohnen/Familie - Erwerb/Wirtschaftlichkeit).
+//
+// Genau dieses Muster wird hier fuer das NEUE Objekt neu geschrieben - mit
+// dessen Zahlen und passend zu den Fotos, die tatsaechlich verwendet werden.
+
+export interface TitleHighlight {
+  headline: string;
+  text: string;
+}
+
+export const TITLE_HIGHLIGHT_COUNT = 3;
+
+const TITLE_HIGHLIGHTS_TOOL = {
+  name: "titel_highlights",
+  description:
+    "Liefert die drei kurzen Argumente-Bloecke (Schlagzeile + Text) fuer die Titelseite eines Immobilien-Exposés.",
+  input_schema: {
+    type: "object",
+    properties: {
+      highlights: {
+        type: "array",
+        minItems: TITLE_HIGHLIGHT_COUNT,
+        maxItems: TITLE_HIGHLIGHT_COUNT,
+        description: `Genau ${TITLE_HIGHLIGHT_COUNT} Bloecke, in der Reihenfolge, in der sie auf der Titelseite erscheinen.`,
+        items: {
+          type: "object",
+          properties: {
+            headline: {
+              type: "string",
+              description:
+                "Schlagzeile aus zwei bis vier Schlagworten in GROSSBUCHSTABEN, mit Punkten verbunden und mit einem Punkt abgeschlossen, z.B. \"FAMILIE.FREIRAUM.LEBEN.\" - hoechstens 40 Zeichen.",
+            },
+            text: {
+              type: "string",
+              description:
+                "Ein bis zwei kurze Saetze (zusammen hoechstens 25 Woerter) mit KONKRETEN Angaben aus den Unterlagen (Flaeche, Grundstueck, Bauweise, Zimmer, Erwerbsvorteil).",
+            },
+          },
+          required: ["headline", "text"],
+        },
+      },
+    },
+    required: ["highlights"],
+  },
+};
+
+export async function writeTitleHighlights(
+  api: ApiSettings,
+  type: ExposeType,
+  datasheetText: string,
+  photoCaptions: string[],
+  // Die aus der Vorlage uebernommenen Bloecke als Tonfall-Vorbild (falls beim
+  // Einlesen erfasst) - so trifft der neue Text den Stil des Maklers genauer
+  // als jede allgemeine Beschreibung.
+  styleSample: string,
+  styleTexts: StyleText[],
+): Promise<TitleHighlight[]> {
+  if (!aiReady(api)) return [];
+  try {
+    const system =
+      `Du schreibst die drei kurzen Argumente-Bloecke fuer die TITELSEITE eines Exposés (${TYPE_LABEL[type]}). ` +
+      "Jeder Block besteht aus einer Schlagzeile und ein bis zwei kurzen Saetzen. " +
+      "Die Schlagzeile besteht aus zwei bis vier Schlagworten in GROSSBUCHSTABEN, mit Punkten verbunden und mit einem Punkt abgeschlossen (Muster: WORT.WORT.WORT.). " +
+      "Die drei Bloecke beleuchten DREI VERSCHIEDENE Blickwinkel, in dieser Reihenfolge: 1. Substanz und Wert der Immobilie, 2. Wohnen, Raum und Alltag, 3. Erwerb und wirtschaftlicher Vorteil. " +
+      "Nutze KONKRETE Angaben aus den Unterlagen (Quadratmeter, Grundstueck, Baujahr/Bauweise, Zimmerzahl, Erwerbsform) - keine leeren Versprechen, keine reisserischen Superlative. " +
+      "Beziehe dich auf das, was auf den tatsaechlich verwendeten Fotos zu sehen ist, und behaupte nichts, was weder in den Unterlagen noch auf den Fotos vorkommt. " +
+      (styleSample
+        ? `Orientiere dich im Tonfall an diesen Bloecken aus einem frueheren Exposé desselben Maklers (Inhalt NICHT uebernehmen, nur den Stil):\n${styleSample}\n`
+        : "") +
+      buildStyleContext(styleTexts, type) +
+      " Antworte ausschliesslich ueber das Werkzeug \"titel_highlights\".";
+
+    const captions = photoCaptions.filter(Boolean).slice(0, 12);
+    const userText =
+      `Unterlagen zum Objekt:\n${datasheetText.slice(0, 8000) || "(keine)"}\n\n` +
+      `Auf den verwendeten Fotos ist zu sehen:\n${captions.map((c) => `- ${c}`).join("\n") || "(keine Angaben)"}`;
+
+    const data = await callAnthropic(api, {
+      model: api.model,
+      max_tokens: 1200,
+      system,
+      tools: [TITLE_HIGHLIGHTS_TOOL],
+      tool_choice: { type: "tool", name: "titel_highlights" },
+      messages: [{ role: "user", content: userText }],
+    });
+
+    const tool = data.content.find((c) => c.type === "tool_use");
+    const input = tool?.input as
+      | { highlights?: { headline?: string; text?: string }[] }
+      | undefined;
+    return (input?.highlights ?? [])
+      .slice(0, TITLE_HIGHLIGHT_COUNT)
+      .map((h) => ({
+        headline: String(h?.headline ?? "").trim().slice(0, 60),
+        text: String(h?.text ?? "").trim().slice(0, 300),
+      }))
+      .filter((h) => h.headline || h.text);
+  } catch {
+    return [];
+  }
+}
+
 // --- Objektadresse aus den Datenblaettern lesen ---------------------------
 //
 // Grundlage fuer den automatisch vergebenen Exposé-Namen im Archiv
