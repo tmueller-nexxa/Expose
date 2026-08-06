@@ -21,6 +21,11 @@ export function TopBar() {
         <NavLink to="/exposes">Meine Exposés</NavLink>
       </nav>
       <div className="spacer" />
+      {/* Kennung des geladenen Standes - zeigt sofort, ob der Browser die
+          neueste Fassung hat oder noch eine aus dem Zwischenspeicher. */}
+      <span className="build-id" title="Geladener Programmstand">
+        {__BUILD_ID__}
+      </span>
       {cloudMode && authUser?.email && (
         <span className="hint" style={{ marginRight: 4 }}>
           {authUser.email}

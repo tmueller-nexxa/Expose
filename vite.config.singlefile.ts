@@ -5,9 +5,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { execSync } from "node:child_process";
+
+function buildId(): string {
+  try {
+    return `${execSync("git rev-parse --short HEAD").toString().trim()} · einzeldatei`;
+  } catch {
+    return "dev";
+  }
+}
 
 export default defineConfig({
   plugins: [react(), viteSingleFile()],
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   build: {
     target: "es2020",
     outDir: "dist-single",

@@ -515,14 +515,47 @@ function titleFieldBoxes(page: Page): ShapeElement[] {
     .filter(
       (e): e is ShapeElement =>
         e.kind === "shape" &&
-        e.y >= 0.55 &&
-        e.y <= 0.95 &&
-        e.x <= 0.08 &&
-        e.w >= 0.25 &&
-        e.w <= 0.8 &&
-        e.h >= 0.02,
+        e.y >= 0.5 &&
+        e.y <= 0.97 &&
+        // Linke Seitenhaelfte: die Felder sitzen am linken Rand, der Block mit
+        // den Argumente-Bloecken dagegen rechts.
+        e.x + e.w / 2 <= 0.55 &&
+        e.w >= 0.15 &&
+        e.h >= 0.015,
     )
     .sort((a, b) => a.y - b.y);
+}
+
+// Leere Textfelder, die als Adress-/Webfeld in Frage kommen: untere
+// Seitenhaelfte, linke Seitenhaelfte, von oben nach unten. Zweiter Weg neben
+// den Flaechen - erfasst auch Vorlagen, in denen die Felder ohne eigene
+// Farbflaeche auskommen.
+function titleFieldSlots(page: Page): TextElement[] {
+  return page.elements
+    .filter(
+      (e): e is TextElement =>
+        isTextEl(e) && !e.text.trim() && e.y >= 0.5 && e.x + e.w / 2 <= 0.55,
+    )
+    .sort((a, b) => a.y - b.y);
+}
+
+// Liegt an dieser Stelle bereits eine Farbflaeche? Dann wird KEIN zweiter
+// Kasten daraufgesetzt (genau dieser Fehler war gemeldet: eine weisse Box
+// landete auf dem goldenen Kasten der Vorlage).
+function shapeAt(page: Page, box: { x: number; y: number; w: number; h: number }): ShapeElement | null {
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  return (
+    page.elements.find(
+      (e): e is ShapeElement =>
+        e.kind === "shape" &&
+        e.w < 0.98 &&
+        cx >= e.x &&
+        cx <= e.x + e.w &&
+        cy >= e.y - 0.03 &&
+        cy <= e.y + e.h + 0.03,
+    ) ?? null
+  );
 }
 
 function insideBox(el: PageElement, box: ShapeElement): boolean {
@@ -576,35 +609,46 @@ export function fillTitleFields(
   const addressText = formatAddress(address);
   const site = website.trim();
   const boxes = titleFieldBoxes(page);
+  const slots = titleFieldSlots(page);
   const used = new Set<PageElement>();
 
   // Reihenfolge der Suche, jeweils vom Sichersten zum Notbehelf:
   //   1. das Feld, in dem noch der Text der Vorlage steht (Anschrift/URL)
   //   2. ein Textfeld im passenden Kasten der Vorlage (auch leer)
-  //   3. ein neues Textfeld IN dem Kasten der Vorlage
-  //   4. Kasten samt Text an der in der Vorlage gemessenen Stelle anlegen
+  //   3. ein freies Textfeld an der richtigen Stelle (auch ohne Farbflaeche)
+  //   4. ein neues Textfeld IN einer vorhandenen Flaeche
+  //   5. erst zuletzt: Kasten samt Text an der gemessenen Stelle anlegen
   const place = (
     text: string,
-    box: ShapeElement | undefined,
+    index: number,
     matches: (t: string) => boolean,
     fallbackBox: { x: number; y: number; w: number; h: number },
   ) => {
     if (!text) return;
+    const box = boxes[index];
     const captured = page.elements.find(
       (e): e is TextElement => isTextEl(e) && !used.has(e) && matches(e.text),
     );
-    const slot = captured ?? (box ? textInBox(page, box, used) : null);
+    const slot =
+      captured ??
+      (box ? textInBox(page, box, used) : null) ??
+      slots.find((s) => !used.has(s)) ??
+      null;
     if (slot) {
       used.add(slot);
       fillTextElement(slot, text);
       return;
     }
-    if (box) addTextInBox(page, box, text);
+    // Kein Feld gefunden: dann in eine vorhandene Flaeche schreiben statt eine
+    // neue anzulegen - entweder in den zugehoerigen Kasten der Vorlage oder in
+    // die Flaeche, die an der gemessenen Stelle bereits liegt.
+    const target = box ?? shapeAt(page, fallbackBox);
+    if (target) addTextInBox(page, target, text);
     else addTitleField(page, fallbackBox, text, accentColor(layout));
   };
 
-  place(addressText, boxes[0], (t) => ADDRESS_RE.test(t), ADDRESS_BOX);
-  place(site, boxes[1], (t) => URL_RE.test(t), WEBSITE_BOX);
+  place(addressText, 0, (t) => ADDRESS_RE.test(t), ADDRESS_BOX);
+  place(site, 1, (t) => URL_RE.test(t), WEBSITE_BOX);
 }
 
 // --- Titelseite: die drei Argumente-Bloecke ------------------------------
