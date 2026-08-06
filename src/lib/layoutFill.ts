@@ -33,6 +33,7 @@ import type {
   ExposeSectionKind,
   Page,
   PageElement,
+  ShapeElement,
   StoredFile,
   StoredLayout,
   TextElement,
@@ -176,6 +177,12 @@ interface FillOptions {
   // angehaengte Seiten, die dieselbe Gestaltung, aber nicht dieselbe
   // Beschriftung tragen sollen.
   clearLabels?: boolean;
+  // Ueberschrift/Fliesstext NICHT sofort in die leeren Textflaechen setzen.
+  // Fuer die Titelseite: dort haben die leeren Flaechen feste Aufgaben
+  // (Anschrift, Internetadresse, die drei Argumente-Bloecke) und werden
+  // zuerst gezielt befuellt - erst was dann noch frei ist, nimmt den
+  // Abschnittstext auf.
+  deferTexts?: boolean;
 }
 
 function pageFromDesign(design: DesignPage, opts: FillOptions): Page {
@@ -197,7 +204,7 @@ function pageFromDesign(design: DesignPage, opts: FillOptions): Page {
     for (const el of elements) if (el.kind === "logo") el.src = opts.logo.dataUrl;
   }
 
-  fillTexts(elements, opts.headline ?? "", opts.text ?? "");
+  if (!opts.deferTexts) fillTexts(elements, opts.headline ?? "", opts.text ?? "");
 
   return {
     id: uid("pg"),
@@ -248,11 +255,15 @@ export function buildLayoutPages(
   inputs.forEach((input, i) => {
     const design = designs[i];
     if (!design) return;
+    const headline = input.headline || input.section.title;
     const built = pageFromDesign(design, {
       photos: input.photos,
-      headline: input.headline || input.section.title,
+      headline,
       text: input.text,
       logo,
+      // Auf der Titelseite haben die Textflaechen feste Aufgaben - sie werden
+      // unten gezielt befuellt, bevor der Abschnittstext zum Zug kommt.
+      deferTexts: i === 0,
     });
     // Titelseite: Kopfzeile (Balken + "EXPOSÉ" + Logo) ist gesetzt und wird
     // ergaenzt, falls die Erfassung der Vorlage sie nicht hergegeben hat.
@@ -264,6 +275,9 @@ export function buildLayoutPages(
       ensureExposeHeader(built, logo);
       fillTitleFields(built, layout, address, website);
       fillTitleHighlights(built, titleHighlights, fromTemplate);
+      // Was danach noch frei ist, nimmt Ueberschrift und Text des Abschnitts
+      // auf (siehe deferTexts oben).
+      fillTexts(built.elements, headline, input.text);
     }
     pages.push(built);
   });
@@ -487,6 +501,72 @@ function addTitleField(
   });
 }
 
+// Die beiden festen Felder der Titelseite als FLAECHEN der Vorlage: in der
+// unteren Seitenhaelfte, am linken Seitenrand beginnend, breit genug fuer
+// eine Zeile Anschrift. Von oben nach unten: erst die Anschrift, darunter die
+// Internetadresse (so wie in der Vorlage gemessen: y 0,7413 und y 0,8712).
+//
+// Ueber die Flaechen zu gehen statt ueber ihren Text ist entscheidend: beim
+// Einlesen wird der Text dieser Felder nicht immer miterfasst - dann sind die
+// Kaesten zwar da, aber leer. Genau dann wurde bisher faelschlich ein zweiter
+// Kasten obendrauf gesetzt, statt den vorhandenen zu befuellen.
+function titleFieldBoxes(page: Page): ShapeElement[] {
+  return page.elements
+    .filter(
+      (e): e is ShapeElement =>
+        e.kind === "shape" &&
+        e.y >= 0.55 &&
+        e.y <= 0.95 &&
+        e.x <= 0.08 &&
+        e.w >= 0.25 &&
+        e.w <= 0.8 &&
+        e.h >= 0.02,
+    )
+    .sort((a, b) => a.y - b.y);
+}
+
+function insideBox(el: PageElement, box: ShapeElement): boolean {
+  const cx = el.x + el.w / 2;
+  const cy = el.y + el.h / 2;
+  return cx >= box.x && cx <= box.x + box.w && cy >= box.y - 0.01 && cy <= box.y + box.h + 0.01;
+}
+
+function textInBox(page: Page, box: ShapeElement, used: Set<PageElement>): TextElement | null {
+  return (
+    page.elements.find(
+      (e): e is TextElement => isTextEl(e) && !used.has(e) && insideBox(e, box),
+    ) ?? null
+  );
+}
+
+// Legt ein Textfeld IN eine vorhandene Flaeche der Vorlage - gleiche
+// Innenabstaende wie im Original, Schrift so gross wie die Flaeche es zulaesst.
+function addTextInBox(page: Page, box: ShapeElement, text: string): void {
+  const padX = Math.min(TITLE_FIELD_TEXT_X, box.w * 0.08);
+  const textW = box.w - padX * 2;
+  const fontSize = fitFontSize(text, textW * REF_W, box.h * 0.8 * REF_H, {
+    max: TITLE_FIELD_FONT_SIZE,
+    min: 11,
+    weight: 700,
+  });
+  const h = fitTextBoxHeight(text, textW, fontSize, 700);
+  page.elements.push({
+    id: uid("el"),
+    kind: "text",
+    x: box.x + padX,
+    y: box.y + Math.max(0, (box.h - h) / 2),
+    w: textW,
+    h,
+    z: Math.max(box.z + 1, TITLE_FIELD_Z + 1),
+    text,
+    fontSize,
+    align: "left",
+    color: TITLE_FIELD_INK,
+    background: "rgba(0,0,0,0)",
+    fontWeight: 700,
+  });
+}
+
 export function fillTitleFields(
   page: Page,
   layout: StoredLayout,
@@ -495,28 +575,36 @@ export function fillTitleFields(
 ): void {
   const addressText = formatAddress(address);
   const site = website.trim();
+  const boxes = titleFieldBoxes(page);
+  const used = new Set<PageElement>();
 
-  // 1) Anschrift: das aus der Vorlage uebernommene Adressfeld weiterverwenden
-  // (dort stimmen Position, Schriftgroesse und Farbe bereits) und nur seinen
-  // Inhalt austauschen.
-  const addressSlot = page.elements.find(
-    (e): e is TextElement => isTextEl(e) && ADDRESS_RE.test(e.text),
-  );
-  if (addressText) {
-    if (addressSlot) fillTextElement(addressSlot, addressText);
-    else addTitleField(page, ADDRESS_BOX, addressText, accentColor(layout));
-  }
+  // Reihenfolge der Suche, jeweils vom Sichersten zum Notbehelf:
+  //   1. das Feld, in dem noch der Text der Vorlage steht (Anschrift/URL)
+  //   2. ein Textfeld im passenden Kasten der Vorlage (auch leer)
+  //   3. ein neues Textfeld IN dem Kasten der Vorlage
+  //   4. Kasten samt Text an der in der Vorlage gemessenen Stelle anlegen
+  const place = (
+    text: string,
+    box: ShapeElement | undefined,
+    matches: (t: string) => boolean,
+    fallbackBox: { x: number; y: number; w: number; h: number },
+  ) => {
+    if (!text) return;
+    const captured = page.elements.find(
+      (e): e is TextElement => isTextEl(e) && !used.has(e) && matches(e.text),
+    );
+    const slot = captured ?? (box ? textInBox(page, box, used) : null);
+    if (slot) {
+      used.add(slot);
+      fillTextElement(slot, text);
+      return;
+    }
+    if (box) addTextInBox(page, box, text);
+    else addTitleField(page, fallbackBox, text, accentColor(layout));
+  };
 
-  // 2) Internetadresse: die der Vorlage steht bereits richtig - sie wird nur
-  // ersetzt, wenn im Datenbereich eine eigene hinterlegt ist.
-  const siteSlot = page.elements.find(
-    (e): e is TextElement => isTextEl(e) && e !== addressSlot && URL_RE.test(e.text),
-  );
-  if (siteSlot) {
-    if (site) fillTextElement(siteSlot, site);
-  } else if (site) {
-    addTitleField(page, WEBSITE_BOX, site, accentColor(layout));
-  }
+  place(addressText, boxes[0], (t) => ADDRESS_RE.test(t), ADDRESS_BOX);
+  place(site, boxes[1], (t) => URL_RE.test(t), WEBSITE_BOX);
 }
 
 // --- Titelseite: die drei Argumente-Bloecke ------------------------------
@@ -593,16 +681,55 @@ export function fillTitleHighlights(
       .filter((e) => !ADDRESS_RE.test(e.text) && !URL_RE.test(e.text)),
   );
   const heads = candidates.filter(isHighlightHead);
-  const taken = new Set<TextElement>();
-  heads.slice(0, highlights.length).forEach((head, i) => {
-    const h = highlights[i];
-    if (h.headline) fillTextElement(head, h.headline);
-    const bodyEl = bodyForHeadline(head, candidates.filter((c) => !taken.has(c)));
-    if (h.text && bodyEl) {
-      fillTextElement(bodyEl, h.text);
-      taken.add(bodyEl);
-    }
-  });
+  if (heads.length > 0) {
+    const taken = new Set<TextElement>();
+    heads.slice(0, highlights.length).forEach((head, i) => {
+      const h = highlights[i];
+      if (h.headline) fillTextElement(head, h.headline);
+      const bodyEl = bodyForHeadline(head, candidates.filter((c) => !taken.has(c)));
+      if (h.text && bodyEl) {
+        fillTextElement(bodyEl, h.text);
+        taken.add(bodyEl);
+      }
+    });
+    return;
+  }
+
+  // Beim Einlesen wurde der Text der Bloecke nicht miterfasst: dann stehen
+  // dort LEERE Textflaechen. Sie werden paarweise befuellt - Schlagzeile,
+  // darunter der Text, drei Mal. Ohne das blieben auf der Titelseite lauter
+  // leere Platzhalter stehen.
+  //
+  // Die Bloecke stehen in EINER Spalte untereinander. Darum werden nur Felder
+  // derselben Spalte (gleiche linke Kante, gleiche Breite) verwendet - sonst
+  // wuerde eine daneben liegende, breite Textflaeche mitgenommen, die
+  // eigentlich den Abschnittstext aufnehmen soll.
+  const empty = page.elements.filter(
+    (e): e is TextElement =>
+      isTextEl(e) &&
+      !e.text.trim() &&
+      // Die beiden festen Felder (Anschrift/Internetadresse) sind zu diesem
+      // Zeitpunkt bereits gefuellt und darum ohnehin nicht mehr leer.
+      e.y > 0.3,
+  );
+  const columns = new Map<string, TextElement[]>();
+  for (const el of empty) {
+    const key = `${Math.round(el.x * 50)}:${Math.round(el.w * 20)}`;
+    const list = columns.get(key);
+    if (list) list.push(el);
+    else columns.set(key, [el]);
+  }
+  let column: TextElement[] = [];
+  for (const list of columns.values()) if (list.length > column.length) column = list;
+  if (column.length < 2) return;
+  const slots = [...column].sort((a, b) => a.y - b.y);
+  for (let i = 0; i < highlights.length; i++) {
+    const head = slots[i * 2];
+    const body = slots[i * 2 + 1];
+    if (!head) break;
+    if (highlights[i].headline) fillTextElement(head, highlights[i].headline);
+    if (body && highlights[i].text) fillTextElement(body, highlights[i].text);
+  }
 }
 
 // --- Seitenzahlen im Design der Vorlage ----------------------------------
