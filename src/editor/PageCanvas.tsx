@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { Page, PageElement } from "../lib/types";
+import type { ImageElement, Page, PageElement } from "../lib/types";
 import { PAGE_RATIO, REF_W } from "./constants";
 import { CanvasElement } from "./CanvasElement";
 import { clamp } from "../lib/util";
@@ -22,6 +22,11 @@ interface Props {
   onCommitText: (id: string, text: string) => void;
   onDropFileToElement: (id: string, file: File) => void;
   onDropFileToCanvas: (xFrac: number, yFrac: number, file: File) => void;
+  // Bild auf Seitengroesse schalten (und wieder zurueck).
+  onToggleFullPage: (id: string) => void;
+  // Hochgeladene Fotos nach Datei-ID - fuer das Durchschalten der Fotos
+  // desselben Raums im Bild.
+  photoById: Record<string, string>;
 }
 
 // Ab dieser Ziehdistanz (Px) gilt ein Pointerdown auf der leeren Flaeche als
@@ -217,6 +222,85 @@ export function PageCanvas(props: Props) {
         />
       )}
       {centerGuide && <div className="center-guide-v" />}
+      <ImageTools
+        page={page}
+        selectedIds={props.selectedIds}
+        editable={editable}
+        editingId={props.editingId}
+        width={width}
+        height={height}
+        photoById={props.photoById}
+        onChange={props.onChange}
+        onToggleFullPage={props.onToggleFullPage}
+      />
+    </div>
+  );
+}
+
+// Bedienelemente am ausgewaehlten Bild: seitenfuellend schalten und die Fotos
+// desselben Raums durchschalten.
+//
+// Bewusst NICHT innerhalb des Bildelements gerendert, sondern als Auflage ganz
+// oben auf der Seite: ein Kindelement kann den Stapelkontext seines Elternteils
+// nicht verlassen. Ein seitenfuellendes Bild liegt hinter allen anderen
+// Elementen - seine Knoepfe waeren dort von Textflaechen verdeckt und nicht
+// mehr anklickbar, das Bild liesse sich nicht wieder verkleinern.
+function ImageTools(props: {
+  page: Page;
+  selectedIds: Set<string>;
+  editable: boolean;
+  editingId: string | null;
+  width: number;
+  height: number;
+  photoById: Record<string, string>;
+  onChange: (id: string, patch: Partial<PageElement>) => void;
+  onToggleFullPage: (id: string) => void;
+}) {
+  const { page, selectedIds, editable, editingId, width, height, photoById } = props;
+  if (!editable || selectedIds.size !== 1) return null;
+  const id = [...selectedIds][0];
+  const el = page.elements.find((e) => e.id === id);
+  if (!el || el.kind !== "image" || el.locked || editingId === id) return null;
+  const img = el as ImageElement;
+  if (!img.src) return null;
+
+  // Nur Fotos, deren Daten auch wirklich vorliegen - eine im Datenbereich
+  // geloeschte Datei darf nicht als leeres Bild angeboten werden.
+  const alts = (img.altFileIds ?? []).filter((fid) => photoById[fid]);
+  const altIndex = alts.findIndex((fid) => photoById[fid] === img.src);
+  const isFullPage = img.x <= 0.001 && img.y <= 0.001 && img.w >= 0.999 && img.h >= 0.999;
+
+  return (
+    <div
+      className="img-tools"
+      style={{
+        left: (img.x + img.w) * width,
+        top: img.y * height,
+      }}
+      // Ein Klick auf einen Knopf darf das Bild nicht zugleich verschieben.
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        title={isFullPage ? "Auf vorherige Größe zurücksetzen" : "Bild seitenfüllend"}
+        onClick={() => props.onToggleFullPage(id)}
+      >
+        {isFullPage ? "↙ Verkleinern" : "⛶ Seitenfüllend"}
+      </button>
+      {alts.length > 1 && (
+        <button
+          type="button"
+          title="Nächstes Foto desselben Raums"
+          onClick={() => {
+            // Ist das aktuelle Foto nicht (mehr) in der Liste, beim ersten
+            // beginnen statt gar nichts zu tun.
+            const next = alts[(altIndex + 1 + alts.length) % alts.length];
+            props.onChange(id, { src: photoById[next] } as Partial<PageElement>);
+          }}
+        >
+          ⟳ Foto {Math.max(0, altIndex) + 1}/{alts.length}
+        </button>
+      )}
     </div>
   );
 }

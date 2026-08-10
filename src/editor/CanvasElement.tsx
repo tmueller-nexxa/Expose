@@ -278,6 +278,7 @@ export function CanvasElement(props: Props) {
     const imgScale = img.imgScale ?? 1;
     const imgX = img.imgX ?? 0;
     const imgY = img.imgY ?? 0;
+
     return (
       <div
         className={`el el-image ${empty ? "empty" : ""} ${

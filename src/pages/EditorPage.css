@@ -218,6 +218,33 @@
   text-align: center;
   pointer-events: none;
 }
+/* Bedienelemente IM Bild (nur bei ausgewaehltem Bild sichtbar):
+   seitenfuellend schalten und Fotos desselben Raums durchschalten. */
+.img-tools {
+  /* Liegt als Auflage AUF der Seite (nicht im Bildelement) - darum ueber
+     alles gelegt und am oberen rechten Rand des Bildes ausgerichtet. */
+  position: absolute;
+  transform: translate(calc(-100% - 6px), 6px);
+  display: flex;
+  gap: 6px;
+  z-index: 1000;
+}
+.img-tools button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.img-tools button:hover {
+  background: rgba(15, 23, 42, 0.92);
+}
 .el-image.empty {
   border: 2px dashed #cbd5e1;
   background: #f8fafc;

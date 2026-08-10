@@ -271,6 +271,15 @@ export interface ImageElement extends BaseElement {
   // Exakte Seitenkopie einer Standardseite (Impressum/AGB/...): nicht vom
   // Nutzer platziert und von der Textgenerierung ausgenommen.
   fromBoilerplate?: boolean;
+  // Weitere hochgeladene Fotos DESSELBEN Raums (Datei-IDs aus
+  // AppData.kiExposeFiles) - im Editor per Knopf im Bild durchschaltbar.
+  // Bewusst nur die IDs statt der Bilddaten: die Fotos liegen bereits im
+  // Datenbestand, ein zweites Mal im Exposé gespeichert waeren es je nach
+  // Objekt viele Megabyte doppelt.
+  altFileIds?: string[];
+  // Groesse vor dem Umschalten auf "seitenfuellend" - damit derselbe Knopf
+  // das Bild wieder auf seinen Platz im Layout zuruecksetzen kann.
+  prevBox?: { x: number; y: number; w: number; h: number; z: number };
   // Von der KI erkannter Bildinhalt (nach Analyse gesetzt).
   analysis?: {
     important: string;

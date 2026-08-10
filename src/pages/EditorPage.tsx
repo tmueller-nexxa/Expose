@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import {
@@ -296,6 +296,18 @@ export function EditorPage() {
     vp.scrollTop = contentY + a.fy * r.height - (a.clientY - vpRect.top);
   }, [canvasWidth]);
 
+  // Hochgeladene Fotos nach Datei-ID - Grundlage fuer das Durchschalten der
+  // Fotos desselben Raums im Bild (siehe ImageElement.altFileIds). Bewusst aus
+  // dem Datenbestand statt aus dem Exposé: so liegt jedes Foto nur EINMAL im
+  // Speicher, nicht zusaetzlich als Kopie an jedem Bildelement.
+  const photoById = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const f of data.kiExposeFiles[exType] ?? []) {
+      if (f.mime.startsWith("image/")) out[f.id] = f.dataUrl;
+    }
+    return out;
+  }, [data.kiExposeFiles, exType]);
+
   const commit = useCallback((next: ExposeProject) => {
     next.updatedAt = Date.now();
     projectRef.current = next;
@@ -321,6 +333,66 @@ export function EditorPage() {
             e.id === elId ? ({ ...e, ...patch } as PageElement) : e,
           ),
         })),
+      );
+    },
+    [mutatePages],
+  );
+
+  // Bild auf Seitengroesse schalten - und beim erneuten Aufruf wieder auf
+  // seinen Platz im Layout zurueck (die vorherige Groesse steht solange am
+  // Element, siehe ImageElement.prevBox).
+  //
+  // Das seitenfuellende Bild wandert dabei hinter ALLE anderen Elemente der
+  // Seite: laege es oben, verdeckte es Ueberschriften, Texte und Farbflaechen
+  // vollstaendig und die Seite waere nur noch ein Foto.
+  const toggleFullPage = useCallback(
+    (elId: string) => {
+      mutatePages((pages) =>
+        pages.map((pg) => {
+          const current = pg.elements.find((e) => e.id === elId);
+          if (!current || current.kind !== "image") return pg;
+
+          // Zurueck auf die vorherige Groesse: betrifft NUR dieses Element,
+          // die Ebenen der uebrigen bleiben unangetastet.
+          const prev = (current as ImageElement).prevBox;
+          if (prev) {
+            return {
+              ...pg,
+              elements: pg.elements.map((e) =>
+                e.id === elId
+                  ? { ...(e as ImageElement), ...prev, prevBox: undefined }
+                  : e,
+              ),
+            };
+          }
+
+          const minZ = Math.min(...pg.elements.map((e) => e.z));
+          // Ziel-Ebene liegt unter allen anderen. Negative Ebenen sind dabei
+          // NICHT brauchbar: ein Element mit negativem z-index wird vom
+          // Hintergrund der Seite ueberdeckt und ist damit unsichtbar. Faellt
+          // die Ziel-Ebene unter 0, wandern darum alle Elemente der Seite um
+          // denselben Betrag nach oben - die Reihenfolge bleibt gleich.
+          const target = minZ - 1;
+          const shift = target < 0 ? -target : 0;
+          return {
+            ...pg,
+            elements: pg.elements.map((e) => {
+              if (e.id !== elId || e.kind !== "image") {
+                return shift ? { ...e, z: e.z + shift } : e;
+              }
+              const img = e as ImageElement;
+              return {
+                ...img,
+                prevBox: { x: img.x, y: img.y, w: img.w, h: img.h, z: img.z + shift },
+                x: 0,
+                y: 0,
+                w: 1,
+                h: 1,
+                z: target + shift,
+              };
+            }),
+          };
+        }),
       );
     },
     [mutatePages],
@@ -1105,6 +1177,8 @@ export function EditorPage() {
               }}
               onDropFileToElement={dropFileToElement}
               onDropFileToCanvas={dropFileToCanvas}
+              onToggleFullPage={toggleFullPage}
+              photoById={photoById}
             />
           </div>
           <div className="canvas-caption">
@@ -1172,6 +1246,8 @@ export function EditorPage() {
                   onCommitText={() => {}}
                   onDropFileToElement={() => {}}
                   onDropFileToCanvas={() => {}}
+                  onToggleFullPage={() => {}}
+                  photoById={photoById}
                 />
                 <button
                   type="button"
@@ -1444,6 +1520,10 @@ function Inspector({
 }
 
 // --- Druckansicht --------------------------------------------------------
+// Die Druckansicht ist nicht bedienbar - die Fotoliste bleibt darum leer
+// (das Durchschalten der Fotos gibt es nur im Editor).
+const NO_PHOTOS: Record<string, string> = {};
+
 function PrintView({ project }: { project: ExposeProject }) {
   return (
     <div className="print-root">
@@ -1464,6 +1544,8 @@ function PrintView({ project }: { project: ExposeProject }) {
             onCommitText={() => {}}
             onDropFileToElement={() => {}}
             onDropFileToCanvas={() => {}}
+            onToggleFullPage={() => {}}
+            photoById={NO_PHOTOS}
           />
         </div>
       ))}

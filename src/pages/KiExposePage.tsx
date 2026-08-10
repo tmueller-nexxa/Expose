@@ -46,6 +46,7 @@ import {
 import { colorDistance, computeImageSignature, cropRegionFromImage, hammingDistance, invertLogoToWhite } from "../lib/imageEdit";
 import { ensureScriptFontLoaded } from "../editor/fit";
 import { saveProjectNow } from "../lib/storage";
+import { attachPhotoAlternatives, roomAlternatives } from "../lib/rooms";
 import { buildExposeName, fileToDataUrl, formatBytes, uid } from "../lib/util";
 import { extractPdfText, renderPdfPages } from "../lib/pdf";
 import type { ExposeProject, Page } from "../lib/types";
@@ -452,10 +453,13 @@ export function KiExposePage() {
       // steht dort die Geschossbezeichnung ("Grundriss Erdgeschoss" o.ae.),
       // was zuverlaessiger ist als ein optisch aus dem Bild herausgelesenes
       // Klein-Label.
-      const photoPool: { src: string; name: string; pageText?: string }[] = [];
+      // fileId: nur bei direkt hochgeladenen Fotos vorhanden (nicht bei aus
+      // PDFs gerenderten Seiten) - Grundlage fuer das Durchschalten der Fotos
+      // desselben Raums im Editor, siehe lib/rooms.ts.
+      const photoPool: { src: string; name: string; pageText?: string; fileId?: string }[] = [];
       const photoSignatures: { hash: string; avgColor: [number, number, number] }[] = [];
       const seenExact = new Set<string>();
-      const addPhoto = async (src: string, name: string, pageText?: string) => {
+      const addPhoto = async (src: string, name: string, pageText?: string, fileId?: string) => {
         if (seenExact.has(src)) return;
         seenExact.add(src);
         let sig: { hash: string; avgColor: [number, number, number] } | null = null;
@@ -476,7 +480,7 @@ export function KiExposePage() {
           return;
         }
         if (sig && sig.hash) photoSignatures.push(sig);
-        photoPool.push({ src, name, pageText });
+        photoPool.push({ src, name, pageText, fileId });
       };
       let datasheetText = "";
       const imageFiles = files.filter((f) => f.mime.startsWith("image/"));
@@ -497,7 +501,7 @@ export function KiExposePage() {
         for (const p of rendered) if (p.image) energieausweisImages.push(p.image);
       }
 
-      for (const f of imageFiles) await addPhoto(f.dataUrl, f.name);
+      for (const f of imageFiles) await addPhoto(f.dataUrl, f.name, undefined, f.id);
       for (const f of datasheetPdfFiles) {
         const rendered = await renderPdfPages(f.dataUrl, 6, 1000);
         for (let idx = 0; idx < rendered.length; idx++) {
@@ -536,6 +540,9 @@ export function KiExposePage() {
       // dem Pool entfernen, bevor die normale Zuordnung ueberhaupt zum Zug
       // kommt.
       const bySection: { src: string; caption: string }[][] = sections.map(() => []);
+      // Bildbeschreibung je Foto - daraus wird der Raum abgeleitet, damit sich
+      // im Editor die Fotos desselben Raums durchschalten lassen.
+      const captionBySrc = new Map<string, string>();
       const overflow: string[] = [];
       const consumed = new Set<number>();
       const candidatesFor = () =>
@@ -552,6 +559,7 @@ export function KiExposePage() {
             const orig = candidates[pick.index];
             if (!orig) continue;
             consumed.add(orig.origIndex);
+            captionBySrc.set(orig.src, pick.caption);
             bySection[titelSectionIdx].push({ src: orig.src, caption: pick.caption });
           }
         }
@@ -565,6 +573,7 @@ export function KiExposePage() {
             const orig = candidates[pick.index];
             if (!orig) continue;
             consumed.add(orig.origIndex);
+            captionBySrc.set(orig.src, pick.caption);
             bySection[i].push({ src: orig.src, caption: pick.caption });
           }
         }
@@ -584,6 +593,7 @@ export function KiExposePage() {
           }
           res.photos.forEach((a, i) => {
             const orig = remainingPool[i];
+            captionBySrc.set(orig.src, a.caption);
             if (a.sectionIndex >= 0 && a.sectionIndex < sections.length) {
               bySection[a.sectionIndex].push({ src: orig.src, caption: a.caption });
             } else {
@@ -691,6 +701,14 @@ export function KiExposePage() {
         useLayout ? layout : null,
       );
       const allPages = [...pages, ...boilerplateSection];
+      // Fotos desselben Raums am jeweiligen Bildelement vermerken - damit sie
+      // sich im Editor per Knopf im Bild durchschalten lassen (siehe rooms.ts).
+      attachPhotoAlternatives(
+        allPages,
+        roomAlternatives(
+          photoPool.map((p) => ({ ...p, caption: captionBySrc.get(p.src) })),
+        ),
+      );
       // Im uebernommenen Design bekommt auch die Seitenzahl die Typografie der
       // Vorlage - die Schwungschrift-Ziffer des Luxus-Designs waere dort der
       // einzige verbliebene Rest des alten Designs.
