@@ -336,7 +336,10 @@ export function EditorPage() {
       for (const pg of cur.pages) {
         for (const { id, patch } of patches) {
           const el = pg.elements.find((e) => e.id === id);
-          if (!el || (el.kind !== "text" && el.kind !== "heading")) continue;
+          // Nur FREITEXTE (Objekt-/Fotobeschreibungen). Ueberschriften bleiben
+          // ausdruecklich aussen vor: ihre Flaeche ist Teil des Seitenaufbaus
+          // und soll sich nicht mitverschieben oder -veraendern.
+          if (!el || el.kind !== "text") continue;
           const before = { x: el.x, y: el.y, w: el.w, h: el.h };
           const after = {
             x: (patch as Partial<TextElement>).x ?? el.x,
@@ -502,28 +505,32 @@ export function EditorPage() {
           const isToRight = n.x >= merged.x + merged.w - 0.001;
           if (overlapsVertically && isToRight) maxW = Math.min(maxW, n.x - merged.x - GAP);
         }
+        // Nur FREITEXTE sind mit ihrer Hintergrundbox gekoppelt -
+        // Ueberschriften verhalten sich unveraendert wie zuvor.
+        const isFreeText = el.kind === "text";
         // Hat der Text eine farbige Box hinter sich, muss deren Rand mit auf
         // die Seite passen: der Text darf darum nur so weit wachsen, dass die
         // Box samt Innenabstand noch vollstaendig auf dem Blatt liegt.
         // Sonst waere die Box an der Seitenkante abgeschnitten und der
         // Innenabstand auf dieser Seite verschwaende.
-        const panel = findPanel(cur?.pages[pageIndex]?.elements ?? [], el);
+        const panel = isFreeText ? findPanel(cur?.pages[pageIndex]?.elements ?? [], el) : null;
         const padR = panel ? Math.max(0, panel.x + panel.w - (el.x + el.w)) : 0;
         const padB = panel ? Math.max(0, panel.y + panel.h - (el.y + el.h)) : 0;
         maxW = Math.min(maxW, 1 - merged.x - padR);
         maxW = Math.max(merged.w, maxW);
-        // Wird die SCHRIFTGROESSE (oder -art) geaendert, folgt die Box in
-        // beide Richtungen: sie waechst mit groesserer Schrift und schrumpft
-        // mit kleinerer wieder auf das noetige Mass. Nur so kann auch die
-        // farbige Flaeche dahinter mitgehen, statt bei jeder Verkleinerung
-        // zu gross stehen zu bleiben (siehe editor/panels.ts).
+        // Wird bei einem FREITEXT die Schriftgroesse (oder -art) geaendert,
+        // folgt die Box in beide Richtungen: sie waechst mit groesserer
+        // Schrift und schrumpft mit kleinerer wieder auf das noetige Mass.
+        // Nur so kann die farbige Flaeche dahinter mitgehen, statt beim
+        // Verkleinern zu gross stehen zu bleiben (siehe editor/panels.ts).
         //
-        // Beim Aendern des TEXTES bleibt es beim bisherigen Verhalten: dort
-        // wird nur gewachsen, damit eine vom Nutzer per Eckgriff gesetzte
-        // Groesse nicht ungefragt wieder eingerissen wird.
+        // Beim Aendern des TEXTES - und bei Ueberschriften generell - bleibt
+        // es beim bisherigen Verhalten: dort wird nur gewachsen, damit eine
+        // per Eckgriff gesetzte Groesse nicht ungefragt eingerissen wird.
         const sizeChanged =
-          ("fontSize" in patch && patch.fontSize !== el.fontSize) ||
-          ("fontFamily" in patch && patch.fontFamily !== el.fontFamily);
+          isFreeText &&
+          (("fontSize" in patch && patch.fontSize !== el.fontSize) ||
+            ("fontFamily" in patch && patch.fontFamily !== el.fontFamily));
         const neededW = fitTextBoxWidth(merged.text, merged.fontSize, maxW, merged.fontWeight, merged.fontFamily);
         const newW = sizeChanged ? Math.min(neededW, maxW) : Math.max(merged.w, neededW);
         const neededH = fitTextBoxHeight(merged.text, newW, merged.fontSize, merged.fontWeight, merged.fontFamily);
