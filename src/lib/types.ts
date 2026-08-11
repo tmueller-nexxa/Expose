@@ -320,6 +320,11 @@ export interface ShapeElement extends BaseElement {
   kind: "shape";
   color: string; // Fuellfarbe (Hex/rgba)
   radius?: number; // Eckenradius in px bei 794px Referenzbreite
+  // Diese Flaeche ist die HINTERGRUNDBOX eines bestimmten Textfelds (dessen
+  // id). Sie folgt ihm dann im Editor automatisch: aendert sich Schriftgroesse,
+  // Text oder Position, waechst/schrumpft/wandert die Box mit und behaelt
+  // dabei ihren Innenabstand (siehe editor/panels.ts).
+  panelFor?: string;
 }
 
 export type PageElement =

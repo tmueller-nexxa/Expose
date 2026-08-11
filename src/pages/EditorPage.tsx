@@ -29,6 +29,7 @@ import {
   fitTextBoxWidth,
 } from "../editor/fit";
 import { REF_H, REF_W } from "../editor/constants";
+import { findPanel, panelBox } from "../editor/panels";
 import { PageCanvas } from "../editor/PageCanvas";
 import { startPointerDrag } from "../editor/pointer";
 import {
@@ -324,18 +325,60 @@ export function EditorPage() {
     [commit],
   );
 
+  // Ergaenzt zu den angeforderten Aenderungen die ihrer Hintergrundboxen:
+  // aendert ein Textfeld Groesse oder Position, folgt die farbige Flaeche
+  // dahinter mit unveraendertem Innenabstand (siehe editor/panels.ts).
+  const withPanelPatches = useCallback(
+    (patches: { id: string; patch: Partial<PageElement> }[]) => {
+      const cur = projectRef.current;
+      if (!cur) return patches;
+      const extra: { id: string; patch: Partial<PageElement> }[] = [];
+      for (const pg of cur.pages) {
+        for (const { id, patch } of patches) {
+          const el = pg.elements.find((e) => e.id === id);
+          if (!el || (el.kind !== "text" && el.kind !== "heading")) continue;
+          const before = { x: el.x, y: el.y, w: el.w, h: el.h };
+          const after = {
+            x: (patch as Partial<TextElement>).x ?? el.x,
+            y: (patch as Partial<TextElement>).y ?? el.y,
+            w: (patch as Partial<TextElement>).w ?? el.w,
+            h: (patch as Partial<TextElement>).h ?? el.h,
+          };
+          if (
+            after.x === before.x &&
+            after.y === before.y &&
+            after.w === before.w &&
+            after.h === before.h
+          ) {
+            continue;
+          }
+          const panel = findPanel(pg.elements, el as TextElement);
+          // Ist die Flaeche selbst Teil der Aenderung (z.B. weil beide
+          // gemeinsam ausgewaehlt verschoben werden), waere ein zweiter
+          // Patch eine doppelte Verschiebung.
+          if (!panel || patches.some((p) => p.id === panel.id)) continue;
+          extra.push({ id: panel.id, patch: panelBox(panel, before, after) });
+        }
+      }
+      return extra.length > 0 ? [...patches, ...extra] : patches;
+    },
+    [],
+  );
+
   const patchElement = useCallback(
     (elId: string, patch: Partial<PageElement>) => {
+      const all = withPanelPatches([{ id: elId, patch }]);
       mutatePages((pages) =>
         pages.map((pg) => ({
           ...pg,
-          elements: pg.elements.map((e) =>
-            e.id === elId ? ({ ...e, ...patch } as PageElement) : e,
-          ),
+          elements: pg.elements.map((e) => {
+            const p = all.find((x) => x.id === e.id);
+            return p ? ({ ...e, ...p.patch } as PageElement) : e;
+          }),
         })),
       );
     },
-    [mutatePages],
+    [mutatePages, withPanelPatches],
   );
 
   // Bild auf Seitengroesse schalten - und beim erneuten Aufruf wieder auf
@@ -402,7 +445,8 @@ export function EditorPage() {
   // Commit statt N einzelner) - fuer den gemeinsamen Verschiebe-Vorgang einer
   // Mehrfachauswahl (siehe PageCanvas.tsx/beginGroupDrag).
   const patchElements = useCallback(
-    (patches: { id: string; patch: Partial<PageElement> }[]) => {
+    (rawPatches: { id: string; patch: Partial<PageElement> }[]) => {
+      const patches = withPanelPatches(rawPatches);
       mutatePages((pages) =>
         pages.map((pg) => ({
           ...pg,
@@ -413,7 +457,7 @@ export function EditorPage() {
         })),
       );
     },
-    [mutatePages],
+    [mutatePages, withPanelPatches],
   );
 
   // Wie patchElement, aber fuer Textfelder: bei laengerem Text (oder
@@ -458,14 +502,33 @@ export function EditorPage() {
           const isToRight = n.x >= merged.x + merged.w - 0.001;
           if (overlapsVertically && isToRight) maxW = Math.min(maxW, n.x - merged.x - GAP);
         }
+        // Hat der Text eine farbige Box hinter sich, muss deren Rand mit auf
+        // die Seite passen: der Text darf darum nur so weit wachsen, dass die
+        // Box samt Innenabstand noch vollstaendig auf dem Blatt liegt.
+        // Sonst waere die Box an der Seitenkante abgeschnitten und der
+        // Innenabstand auf dieser Seite verschwaende.
+        const panel = findPanel(cur?.pages[pageIndex]?.elements ?? [], el);
+        const padR = panel ? Math.max(0, panel.x + panel.w - (el.x + el.w)) : 0;
+        const padB = panel ? Math.max(0, panel.y + panel.h - (el.y + el.h)) : 0;
+        maxW = Math.min(maxW, 1 - merged.x - padR);
         maxW = Math.max(merged.w, maxW);
+        // Wird die SCHRIFTGROESSE (oder -art) geaendert, folgt die Box in
+        // beide Richtungen: sie waechst mit groesserer Schrift und schrumpft
+        // mit kleinerer wieder auf das noetige Mass. Nur so kann auch die
+        // farbige Flaeche dahinter mitgehen, statt bei jeder Verkleinerung
+        // zu gross stehen zu bleiben (siehe editor/panels.ts).
+        //
+        // Beim Aendern des TEXTES bleibt es beim bisherigen Verhalten: dort
+        // wird nur gewachsen, damit eine vom Nutzer per Eckgriff gesetzte
+        // Groesse nicht ungefragt wieder eingerissen wird.
+        const sizeChanged =
+          ("fontSize" in patch && patch.fontSize !== el.fontSize) ||
+          ("fontFamily" in patch && patch.fontFamily !== el.fontFamily);
         const neededW = fitTextBoxWidth(merged.text, merged.fontSize, maxW, merged.fontWeight, merged.fontFamily);
-        const newW = Math.max(merged.w, neededW);
+        const newW = sizeChanged ? Math.min(neededW, maxW) : Math.max(merged.w, neededW);
         const neededH = fitTextBoxHeight(merged.text, newW, merged.fontSize, merged.fontWeight, merged.fontFamily);
-        // Wie bei der Breite: nur WACHSEN, falls der Text sonst abgeschnitten
-        // waere - eine vom Nutzer manuell per Eckgriff gesetzte (auch
-        // kleinere) Hoehe wird nie eigenmaechtig wieder verkleinert.
-        const newH = Math.max(merged.h, Math.min(neededH, 1 - merged.y));
+        const fittedH = Math.min(neededH, 1 - merged.y - padB);
+        const newH = sizeChanged ? fittedH : Math.max(merged.h, fittedH);
         patch = { ...patch, w: newW, h: newH };
       }
       patchElement(elId, patch);

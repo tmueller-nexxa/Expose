@@ -240,7 +240,11 @@ const TEXT_PAD_Y = TEXT_PAD_PX / REF_H;
 const TEXT_PANEL_GAP = TEXT_PAD_Y * 2 + 0.012;
 
 function textPanel(el: PageElement, color: string): PageElement {
-  return panel(el.x - TEXT_PAD_X, el.y - TEXT_PAD_Y, el.w + TEXT_PAD_X * 2, el.h + TEXT_PAD_Y * 2, color);
+  const p = panel(el.x - TEXT_PAD_X, el.y - TEXT_PAD_Y, el.w + TEXT_PAD_X * 2, el.h + TEXT_PAD_Y * 2, color);
+  // Verweis auf das Textfeld: damit die Flaeche im Editor mitwaechst und
+  // mitschrumpft, wenn dort die Schriftgroesse geaendert wird (siehe
+  // editor/panels.ts).
+  return { ...p, panelFor: el.id } as PageElement;
 }
 
 function rule(x: number, y: number, w: number, color = GOLD): PageElement {
